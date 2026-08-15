@@ -12,6 +12,7 @@ import (
 type ModelService interface {
 	Enable(context.Context, string, int64) (provider.ModelDTO, error)
 	Disable(context.Context, string, int64) (provider.ModelDTO, error)
+	UpdateCapabilities(context.Context, string, provider.UpdateModelCapabilitiesInput) (provider.ModelDTO, error)
 }
 
 type ModelReader interface {
@@ -27,6 +28,7 @@ func (server *Server) registerModelRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /internal/v1/models", server.requireToken(http.HandlerFunc(server.handleListModels)))
 	mux.Handle("POST /internal/v1/models/{id}/enable", server.requireToken(http.HandlerFunc(server.handleEnableModel)))
 	mux.Handle("POST /internal/v1/models/{id}/disable", server.requireToken(http.HandlerFunc(server.handleDisableModel)))
+	mux.Handle("PATCH /internal/v1/models/{id}", server.requireToken(http.HandlerFunc(server.handleUpdateModelCapabilities)))
 }
 
 func (server *Server) handleListModels(response http.ResponseWriter, request *http.Request) {
@@ -53,6 +55,23 @@ func (server *Server) handleEnableModel(response http.ResponseWriter, request *h
 
 func (server *Server) handleDisableModel(response http.ResponseWriter, request *http.Request) {
 	server.handleSetModelEnabled(response, request, false)
+}
+
+func (server *Server) handleUpdateModelCapabilities(response http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Version            int64                        `json:"version"`
+		CapabilityOverride *provider.CapabilityOverride `json:"capability_override"`
+	}
+	if err := decodeJSONBody(request, &input); err != nil || input.Version < 1 || input.CapabilityOverride == nil {
+		writeModelError(response, provider.ErrInvalidModel)
+		return
+	}
+	value, err := server.modelService.UpdateCapabilities(request.Context(), request.PathValue("id"), provider.UpdateModelCapabilitiesInput{ExpectedVersion: input.Version, CapabilityOverride: *input.CapabilityOverride})
+	if err != nil {
+		writeModelError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, value)
 }
 
 func (server *Server) handleSetModelEnabled(response http.ResponseWriter, request *http.Request, enabled bool) {
@@ -119,21 +138,29 @@ func decodeModelVersionRequest(request *http.Request) (int64, error) {
 }
 
 func safeModelDTO(value provider.ProviderModel) provider.ModelDTO {
+	override, err := provider.ParseCapabilityOverride(value.CapabilityOverrideJSON)
+	if err != nil {
+		override = provider.CapabilityOverride{}
+	}
+	effective, err := provider.EffectiveCapabilities(value.Capabilities, value.CapabilityOverrideJSON)
+	if err != nil {
+		effective = value.Capabilities
+	}
 	return provider.ModelDTO{
-		ID:                     value.ID,
-		ProviderID:             value.ProviderID,
-		UpstreamModelID:        value.UpstreamModelID,
-		PublicModelID:          value.PublicModelID,
-		DisplayName:            value.DisplayName,
-		Source:                 value.Source,
-		LifecycleStatus:        value.LifecycleStatus,
-		Enabled:                value.Enabled,
-		Capabilities:           provider.ModelCapabilitiesDTO{Streaming: value.Capabilities.Streaming, Tools: value.Capabilities.Tools, ParallelTools: value.Capabilities.ParallelTools, Reasoning: value.Capabilities.Reasoning, Thinking: value.Capabilities.Thinking, Vision: value.Capabilities.Vision},
-		ContextWindowTokens:    cloneModelInt64(value.ContextWindowTokens),
-		MaxOutputTokens:        cloneModelInt64(value.MaxOutputTokens),
-		CapabilitySource:       value.CapabilitySource,
-		CapabilityOverrideJSON: append([]byte(nil), value.CapabilityOverrideJSON...),
-		Version:                value.Version,
+		ID:                  value.ID,
+		ProviderID:          value.ProviderID,
+		UpstreamModelID:     value.UpstreamModelID,
+		PublicModelID:       value.PublicModelID,
+		DisplayName:         value.DisplayName,
+		Source:              value.Source,
+		LifecycleStatus:     value.LifecycleStatus,
+		Enabled:             value.Enabled,
+		Capabilities:        provider.ModelCapabilitiesDTO{Streaming: effective.Streaming, Tools: effective.Tools, ParallelTools: effective.ParallelTools, Reasoning: effective.Reasoning, Thinking: effective.Thinking, Vision: effective.Vision},
+		ContextWindowTokens: cloneModelInt64(value.ContextWindowTokens),
+		MaxOutputTokens:     cloneModelInt64(value.MaxOutputTokens),
+		CapabilitySource:    value.CapabilitySource,
+		CapabilityOverride:  override,
+		Version:             value.Version,
 	}
 }
 

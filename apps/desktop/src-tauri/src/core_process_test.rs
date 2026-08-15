@@ -1,6 +1,7 @@
 use crate::core_process::{
     build_model_list_path, validate_create_provider, validate_update_provider, CreateProviderInput,
-    ModelListQuery, ReadyEvent, RuntimeLifecycle, RuntimeState, UpdateProviderInput,
+    ModelCapabilityOverride, ModelListQuery, ReadyEvent, RuntimeLifecycle, RuntimeState,
+    UpdateModelCapabilitiesInput, UpdateProviderInput,
 };
 
 fn ready_event() -> ReadyEvent {
@@ -130,6 +131,26 @@ fn provider_update_input_allows_credential_omission_and_rejects_invalid_versions
         ..valid
     })
     .is_err());
+}
+
+#[test]
+fn model_capability_input_is_typed_and_rejects_unknown_fields() {
+    let input: UpdateModelCapabilitiesInput =
+        serde_json::from_str(r#"{"version":3,"capability_override":{"supports_tools":false}}"#)
+            .expect("已知模型能力覆盖应可解析");
+    assert_eq!(input.version, 3);
+    assert_eq!(input.capability_override.supports_tools, Some(false));
+    assert!(serde_json::from_str::<UpdateModelCapabilitiesInput>(
+        r#"{"version":3,"capability_override":{"unknown":true}}"#,
+    )
+    .is_err());
+    assert!(serde_json::from_str::<ModelCapabilityOverride>(
+        r#"{"supports_tools":true,"extra":false}"#,
+    )
+    .is_err());
+    let reset =
+        serde_json::to_string(&ModelCapabilityOverride::default()).expect("空覆盖对象应可序列化");
+    assert_eq!(reset, "{}");
 }
 
 #[test]

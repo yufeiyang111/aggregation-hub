@@ -274,6 +274,31 @@ paths:
         '400': { $ref: '#/components/responses/ControlPlaneError' }
         '401': { $ref: '#/components/responses/InvalidManagementToken' }
         '500': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/models/{id}:
+    patch:
+      operationId: updateModelCapabilities
+      summary: 覆盖模型能力声明或恢复上游声明
+      description: 仅接受已知能力字段；空 capability_override 对象代表恢复上游同步的能力声明。
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ModelID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModelCapabilityUpdateInput' }
+      responses:
+        '200':
+          description: 已更新的模型
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Model' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+        '500': { $ref: '#/components/responses/ControlPlaneError' }
   /internal/v1/models/{id}/enable:
     post:
       operationId: enableModel
@@ -499,10 +524,27 @@ components:
         reasoning: { type: boolean }
         thinking: { type: boolean }
         vision: { type: boolean }
+    ModelCapabilityOverride:
+      type: object
+      additionalProperties: false
+      properties:
+        supports_streaming: { type: boolean }
+        supports_tools: { type: boolean }
+        supports_parallel_tools: { type: boolean }
+        supports_reasoning: { type: boolean }
+        supports_thinking: { type: boolean }
+        supports_vision: { type: boolean }
+    ModelCapabilityUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [version, capability_override]
+      properties:
+        version: { type: integer, minimum: 1 }
+        capability_override: { $ref: '#/components/schemas/ModelCapabilityOverride' }
     Model:
       type: object
       additionalProperties: false
-      required: [id, provider_id, upstream_model_id, public_model_id, display_name, source, lifecycle_status, enabled, capabilities, capability_source, capability_override_json, version]
+      required: [id, provider_id, upstream_model_id, public_model_id, display_name, source, lifecycle_status, enabled, capabilities, capability_source, capability_override, version]
       properties:
         id: { type: string, minLength: 1, maxLength: 64 }
         provider_id: { type: string, minLength: 1, maxLength: 64 }
@@ -516,9 +558,7 @@ components:
         context_window_tokens: { type: integer, minimum: 1 }
         max_output_tokens: { type: integer, minimum: 1 }
         capability_source: { type: string, minLength: 1, maxLength: 128 }
-        capability_override_json:
-          type: object
-          additionalProperties: true
+        capability_override: { $ref: '#/components/schemas/ModelCapabilityOverride' }
         version: { type: integer, minimum: 1 }
     ModelPage:
       type: object

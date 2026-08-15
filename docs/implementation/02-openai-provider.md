@@ -198,6 +198,13 @@ Expected: all static/L2 PASS；L3 separately documented。
 
 Suggested commit: `test: add OpenAI-compatible end-to-end coverage`。
 
+### 补充进度：模型能力覆盖
+
+- [x] `PATCH /internal/v1/models/{id}` 通过 `version` 与强类型 `capability_override` 更新模型能力；未知字段、非布尔值、缺少覆盖对象和版本冲突均被拒绝。
+- [x] SQLite 仓储以事务保存覆盖与审计事件；下一次上游模型同步保留覆盖，目录和 Router 使用有效能力。
+- [x] 桌面端通过显式 `update_model_capabilities` Tauri Command 提供能力编辑和“恢复上游声明”；WebView 不接触管理令牌或原始数据库 JSON。
+- [x] L1 验证：Provider/SQLite/Control Plane 单测、Rust 单测、React 交互测试；未进行真实 Provider、Claude Code 或 Codex 验证。
+
 ## Phase 2 Gate
 
 - [ ] Provider/模型 UI 可完成配置并不泄露凭据。

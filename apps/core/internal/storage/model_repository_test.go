@@ -184,3 +184,55 @@ func TestModelRepositoryDoesNotEnableMissingUpstreamModel(t *testing.T) {
 		t.Fatalf("缺失模型不应启用，错误=%v", err)
 	}
 }
+
+func TestModelRepositoryPersistsCapabilityOverrideAcrossSync(t *testing.T) {
+	database := openMigratedDatabase(t)
+	providers, err := storage.NewProviderRepository(database)
+	if err != nil {
+		t.Fatalf("创建 Provider 仓储失败: %v", err)
+	}
+	models, err := storage.NewModelRepository(database)
+	if err != nil {
+		t.Fatalf("创建模型仓储失败: %v", err)
+	}
+	value := testProvider("01H00000000000000000000061", "override", nil)
+	if err := providers.Create(context.Background(), value, testAudit("01H00000000000000000000062", value.ID)); err != nil {
+		t.Fatalf("创建 Provider 失败: %v", err)
+	}
+	now := time.UnixMilli(1_700_000_030_000).UTC()
+	discovered := provider.SyncedModel{UpstreamModelID: "override-model", DisplayName: "Override Model", Source: provider.ModelSourceUpstream, Capabilities: provider.Capabilities{Streaming: true}, CapabilitySource: "upstream"}
+	if err := models.ReconcileSyncedModels(context.Background(), value.ID, value.Slug, []provider.SyncedModel{discovered}, now); err != nil {
+		t.Fatalf("同步模型失败: %v", err)
+	}
+	model, err := models.FindByPublicID(context.Background(), "override/override-model")
+	if err != nil {
+		t.Fatalf("读取模型失败: %v", err)
+	}
+	tools := true
+	updated, err := models.SetCapabilityOverride(context.Background(), model.ID, model.Version, provider.CapabilityOverride{Tools: &tools}, provider.AuditEvent{ID: "01H00000000000000000000063", EventType: "model_capability_override_updated", EntityType: "model", EntityID: model.ID, DetailJSON: json.RawMessage(`{"mode":"custom"}`), CreatedAt: now.Add(time.Minute)})
+	if err != nil || updated.Version != model.Version+1 {
+		t.Fatalf("设置模型能力覆盖错误: %+v, %v", updated, err)
+	}
+	effective, err := provider.EffectiveCapabilities(updated.Capabilities, updated.CapabilityOverrideJSON)
+	if err != nil || !effective.Tools {
+		t.Fatalf("更新后有效能力错误: %+v, %v", effective, err)
+	}
+	page, err := models.List(context.Background(), provider.ModelPageQuery{PageSize: 10, Capability: "tools"})
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != model.ID {
+		t.Fatalf("能力筛选必须使用覆盖后的有效能力: %+v, %v", page, err)
+	}
+	if _, err := models.SetCapabilityOverride(context.Background(), model.ID, model.Version, provider.CapabilityOverride{}, provider.AuditEvent{ID: "01H00000000000000000000064", EventType: "model_capability_override_reset", EntityType: "model", EntityID: model.ID, DetailJSON: json.RawMessage(`{"mode":"upstream_default"}`), CreatedAt: now.Add(2 * time.Minute)}); !errors.Is(err, provider.ErrStaleResource) {
+		t.Fatalf("旧版本不应覆盖模型能力，错误=%v", err)
+	}
+	if err := models.ReconcileSyncedModels(context.Background(), value.ID, value.Slug, []provider.SyncedModel{discovered}, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("再次同步模型失败: %v", err)
+	}
+	synced, err := models.FindByID(context.Background(), model.ID)
+	if err != nil {
+		t.Fatalf("读取同步后模型失败: %v", err)
+	}
+	effective, err = provider.EffectiveCapabilities(synced.Capabilities, synced.CapabilityOverrideJSON)
+	if err != nil || !effective.Tools {
+		t.Fatalf("同步不应清除用户覆盖: %+v, %v", effective, err)
+	}
+}

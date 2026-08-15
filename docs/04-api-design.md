@@ -207,7 +207,9 @@ POST /internal/v1/models/{id}/test
 
 #### 当前实现边界
 
-当前 Core 已实现模型目录的 `GET /internal/v1/models`，支持 `provider_id`、`lifecycle_status`、`enabled`、`capability`、`search` 和游标分页；以及 `POST /internal/v1/models/{id}/enable`、`POST /internal/v1/models/{id}/disable`。启停必须携带 `version`，冲突返回 `409 stale_resource`。新同步的模型默认禁用；只有状态为 `available` 或 `degraded` 的模型可以启用。模型目录响应不包含任何 Provider 凭据或 CredentialStore 引用。
+当前 Core 已实现模型目录的 `GET /internal/v1/models`，支持 `provider_id`、`lifecycle_status`、`enabled`、`capability`、`search` 和游标分页；以及 `POST /internal/v1/models/{id}/enable`、`POST /internal/v1/models/{id}/disable` 与 `PATCH /internal/v1/models/{id}`。全部写入操作必须携带 `version`，冲突返回 `409 stale_resource`。
+
+`PATCH /internal/v1/models/{id}` 当前只接受 `capability_override`：字段仅限六个 `supports_*` 布尔能力，空对象 `{}` 表示恢复上游同步声明。Core 保存字段级覆盖，并在模型目录、路由预检和数据面路由中返回/使用有效能力；后续同步不会清除该覆盖。能力覆盖不能让实际上游凭空支持某项协议能力，实际请求仍由上游响应决定。响应只返回 allowlist 后的 `capability_override`，不返回原始 JSON、Provider 凭据或 CredentialStore 引用。新同步的模型默认禁用；只有状态为 `available` 或 `degraded` 的模型可以启用。
 
 ### OAuth、Keys、Requests
 

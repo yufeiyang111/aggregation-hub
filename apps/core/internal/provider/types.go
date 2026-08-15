@@ -167,6 +167,7 @@ type ModelRepository interface {
 	FindByPublicID(context.Context, string) (ProviderModel, error)
 	List(context.Context, ModelPageQuery) (ModelPage, error)
 	SetEnabled(context.Context, string, int64, bool, AuditEvent) (ProviderModel, error)
+	SetCapabilityOverride(context.Context, string, int64, CapabilityOverride, AuditEvent) (ProviderModel, error)
 	ReconcileSyncedModels(context.Context, string, string, []SyncedModel, time.Time) error
 }
 
@@ -188,6 +189,12 @@ type UpdateProviderInput struct {
 	Timeout           time.Duration
 	AdapterConfigJSON json.RawMessage
 	Credential        *credential.SecretValue
+}
+
+// UpdateModelCapabilitiesInput 只允许覆盖既有能力字段；空对象代表恢复上游声明。
+type UpdateModelCapabilitiesInput struct {
+	ExpectedVersion    int64
+	CapabilityOverride CapabilityOverride
 }
 
 type CredentialStateDTO struct {
@@ -244,20 +251,20 @@ type ModelCapabilitiesDTO struct {
 }
 
 type ModelDTO struct {
-	ID                     string               `json:"id"`
-	ProviderID             string               `json:"provider_id"`
-	UpstreamModelID        string               `json:"upstream_model_id"`
-	PublicModelID          string               `json:"public_model_id"`
-	DisplayName            string               `json:"display_name"`
-	Source                 ModelSource          `json:"source"`
-	LifecycleStatus        ModelStatus          `json:"lifecycle_status"`
-	Enabled                bool                 `json:"enabled"`
-	Capabilities           ModelCapabilitiesDTO `json:"capabilities"`
-	ContextWindowTokens    *int64               `json:"context_window_tokens,omitempty"`
-	MaxOutputTokens        *int64               `json:"max_output_tokens,omitempty"`
-	CapabilitySource       string               `json:"capability_source"`
-	CapabilityOverrideJSON json.RawMessage      `json:"capability_override_json"`
-	Version                int64                `json:"version"`
+	ID                  string               `json:"id"`
+	ProviderID          string               `json:"provider_id"`
+	UpstreamModelID     string               `json:"upstream_model_id"`
+	PublicModelID       string               `json:"public_model_id"`
+	DisplayName         string               `json:"display_name"`
+	Source              ModelSource          `json:"source"`
+	LifecycleStatus     ModelStatus          `json:"lifecycle_status"`
+	Enabled             bool                 `json:"enabled"`
+	Capabilities        ModelCapabilitiesDTO `json:"capabilities"`
+	ContextWindowTokens *int64               `json:"context_window_tokens,omitempty"`
+	MaxOutputTokens     *int64               `json:"max_output_tokens,omitempty"`
+	CapabilitySource    string               `json:"capability_source"`
+	CapabilityOverride  CapabilityOverride   `json:"capability_override"`
+	Version             int64                `json:"version"`
 }
 
 type PublicModel struct {

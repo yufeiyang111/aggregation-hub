@@ -12,6 +12,7 @@ const apiMocks = vi.hoisted(() => ({
   testProvider: vi.fn(),
   syncProviderModels: vi.fn(),
   listModels: vi.fn(),
+  updateModelCapabilities: vi.fn(),
   enableModel: vi.fn(),
   disableModel: vi.fn(),
   createLocalKey: vi.fn(),
@@ -67,6 +68,7 @@ const modelPage = {
       context_window_tokens: null,
       max_output_tokens: null,
       capability_source: "upstream",
+      capability_override: {},
       version: 3,
     },
   ],
@@ -86,6 +88,7 @@ describe("App", () => {
     apiMocks.testProvider.mockReset();
     apiMocks.syncProviderModels.mockReset();
     apiMocks.listModels.mockReset();
+    apiMocks.updateModelCapabilities.mockReset();
     apiMocks.enableModel.mockReset();
     apiMocks.disableModel.mockReset();
     apiMocks.createLocalKey.mockReset();
@@ -101,6 +104,7 @@ describe("App", () => {
     apiMocks.testProvider.mockResolvedValue({ success: true, code: "ok", message: "通过", http_status: 200, retryable: false });
     apiMocks.syncProviderModels.mockResolvedValue({ discovered: 1 });
     apiMocks.listModels.mockResolvedValue(modelPage);
+    apiMocks.updateModelCapabilities.mockResolvedValue({ ...modelPage.data[0], version: 4, capabilities: { ...modelPage.data[0].capabilities, tools: false }, capability_override: { supports_streaming: true, supports_tools: false, supports_parallel_tools: false, supports_reasoning: false, supports_thinking: false, supports_vision: false } });
     apiMocks.enableModel.mockResolvedValue({ ...modelPage.data[0], enabled: true, version: 4 });
     apiMocks.disableModel.mockResolvedValue({ ...modelPage.data[0], enabled: false, version: 4 });
   });
@@ -189,6 +193,47 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "确认启用" }));
     await waitFor(() => expect(apiMocks.enableModel).toHaveBeenCalledWith("model-1", 3));
   });
+  it("updates model capability overrides through the typed desktop command", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("Package A");
+    await user.click(screen.getByRole("button", { name: "模型" }));
+    await screen.findByText("GPT Test");
+    await user.click(screen.getByRole("button", { name: "能力" }));
+    expect(screen.getByRole("dialog", { name: "模型能力" })).toBeTruthy();
+    await user.click(screen.getByLabelText("工具"));
+    await user.click(screen.getByRole("button", { name: "保存能力设置" }));
+
+    await waitFor(() => expect(apiMocks.updateModelCapabilities).toHaveBeenCalledWith("model-1", {
+      version: 3,
+      capability_override: {
+        supports_streaming: true,
+        supports_tools: false,
+        supports_parallel_tools: false,
+        supports_reasoning: false,
+        supports_thinking: false,
+        supports_vision: false,
+      },
+    }));
+  });
+
+  it("resets model capability overrides to the upstream declaration", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("Package A");
+    await user.click(screen.getByRole("button", { name: "模型" }));
+    await screen.findByText("GPT Test");
+    await user.click(screen.getByRole("button", { name: "能力" }));
+    await user.click(screen.getByRole("button", { name: "恢复上游声明" }));
+
+    await waitFor(() => expect(apiMocks.updateModelCapabilities).toHaveBeenCalledWith("model-1", {
+      version: 3,
+      capability_override: {},
+    }));
+  });
+
   it("creates a provider only through the typed desktop command", async () => {
     const user = userEvent.setup();
     render(<App />);

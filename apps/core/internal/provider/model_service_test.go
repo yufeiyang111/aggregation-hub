@@ -37,7 +37,7 @@ func TestModelServiceSetsStateWithOptimisticVersionAndSafeDTO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取模型失败: %v", err)
 	}
-	auditIDs := &idSequence{values: []string{"01H00000000000000000000201", "01H00000000000000000000202"}}
+	auditIDs := &idSequence{values: []string{"01H00000000000000000000201", "01H00000000000000000000202", "01H00000000000000000000203", "01H00000000000000000000204"}}
 	modelService, err := provider.NewModelService(models, provider.ModelServiceOptions{Now: func() time.Time { return now }, NewID: auditIDs.next})
 	if err != nil {
 		t.Fatalf("创建模型服务失败: %v", err)
@@ -52,11 +52,23 @@ func TestModelServiceSetsStateWithOptimisticVersionAndSafeDTO(t *testing.T) {
 	if _, err := modelService.Disable(context.Background(), model.ID, model.Version); !errors.Is(err, provider.ErrStaleResource) {
 		t.Fatalf("旧版本禁用错误=%v", err)
 	}
+	tools := false
+	updated, err := modelService.UpdateCapabilities(context.Background(), model.ID, provider.UpdateModelCapabilitiesInput{ExpectedVersion: enabled.Version, CapabilityOverride: provider.CapabilityOverride{Tools: &tools}})
+	if err != nil || updated.Capabilities.Tools || updated.CapabilityOverride.Tools == nil || *updated.CapabilityOverride.Tools || updated.Version != enabled.Version+1 {
+		t.Fatalf("更新模型能力覆盖错误: %+v, %v", updated, err)
+	}
+	reset, err := modelService.UpdateCapabilities(context.Background(), model.ID, provider.UpdateModelCapabilitiesInput{ExpectedVersion: updated.Version, CapabilityOverride: provider.CapabilityOverride{}})
+	if err != nil || !reset.Capabilities.Tools || !reset.CapabilityOverride.Empty() || reset.Version != updated.Version+1 {
+		t.Fatalf("恢复上游模型能力错误: %+v, %v", reset, err)
+	}
 	if _, err := modelService.Enable(nil, model.ID, enabled.Version); !errors.Is(err, provider.ErrInvalidModel) {
 		t.Fatalf("空上下文错误=%v", err)
 	}
 	var detail string
 	if err := database.QueryRow(`SELECT detail_json FROM audit_events WHERE id=?`, "01H00000000000000000000201").Scan(&detail); err != nil || detail != `{"enabled":true}` {
 		t.Fatalf("模型审计详情错误=%q, %v", detail, err)
+	}
+	if err := database.QueryRow(`SELECT detail_json FROM audit_events WHERE id=?`, "01H00000000000000000000204").Scan(&detail); err != nil || detail != `{"mode":"upstream_default"}` {
+		t.Fatalf("模型能力恢复审计详情错误=%q, %v", detail, err)
 	}
 }

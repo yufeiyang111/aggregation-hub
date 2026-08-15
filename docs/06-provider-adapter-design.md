@@ -101,6 +101,8 @@ Adapter 返回 GatewayError：code、SafeMessage、HTTPStatus、Retryable、Prov
 
 - 新模型默认禁用；
 - 已存在模型更新上游声明，不覆盖用户覆盖；
+- 用户能力覆盖仅允许六个 `supports_*` 布尔字段，采用字段级合并；空覆盖代表恢复上游声明；
+- Control Plane 和 WebView 只使用强类型、allowlist 的 `capability_override`，不传递数据库中的原始 JSON；
 - 消失模型标记 missing_upstream；
 - 同步失败不删除旧目录；
 - 不支持模型列表时引导手工添加。

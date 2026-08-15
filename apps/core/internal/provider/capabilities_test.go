@@ -23,6 +23,35 @@ func TestEffectiveCapabilitiesAppliesOnlyKnownBooleanOverrides(t *testing.T) {
 	if _, err := provider.EffectiveCapabilities(base, json.RawMessage(`{"supports_tools":"yes"}`)); !errors.Is(err, provider.ErrInvalidCapabilityOverride) {
 		t.Fatalf("非布尔覆盖字段错误=%v", err)
 	}
+	if _, err := provider.ParseCapabilityOverride(json.RawMessage(`null`)); !errors.Is(err, provider.ErrInvalidCapabilityOverride) {
+		t.Fatalf("null 覆盖字段错误=%v", err)
+	}
+	if _, err := provider.ParseCapabilityOverride(json.RawMessage(`[]`)); !errors.Is(err, provider.ErrInvalidCapabilityOverride) {
+		t.Fatalf("数组覆盖字段错误=%v", err)
+	}
+	if _, err := provider.ParseCapabilityOverride(json.RawMessage(`{"supports_tools":null}`)); !errors.Is(err, provider.ErrInvalidCapabilityOverride) {
+		t.Fatalf("null 能力值错误=%v", err)
+	}
+	if _, err := provider.ParseCapabilityOverride(json.RawMessage(`{"supports_tools":true,"supports_tools":false}`)); !errors.Is(err, provider.ErrInvalidCapabilityOverride) {
+		t.Fatalf("重复能力字段错误=%v", err)
+	}
+}
+
+func TestCapabilityOverrideJSONPreservesExplicitFalseAndCanReset(t *testing.T) {
+	value := false
+	override := provider.CapabilityOverride{Tools: &value}
+	raw, err := override.JSON()
+	if err != nil || string(raw) != `{"supports_tools":false}` {
+		t.Fatalf("编码能力覆盖错误: raw=%s err=%v", raw, err)
+	}
+	parsed, err := provider.ParseCapabilityOverride(raw)
+	if err != nil || parsed.Tools == nil || *parsed.Tools {
+		t.Fatalf("解析显式 false 覆盖错误: %+v, %v", parsed, err)
+	}
+	reset, err := (provider.CapabilityOverride{}).JSON()
+	if err != nil || string(reset) != `{}` {
+		t.Fatalf("恢复上游声明编码错误: raw=%s err=%v", reset, err)
+	}
 }
 
 func TestCapabilitiesValidateReportsFirstMissingFeature(t *testing.T) {

@@ -60,6 +60,51 @@ func (repository *ModelRepository) FindByPublicID(ctx context.Context, publicMod
 	return value, nil
 }
 
+func (repository *ModelRepository) SetCapabilityOverride(ctx context.Context, modelID string, expectedVersion int64, override provider.CapabilityOverride, audit provider.AuditEvent) (provider.ProviderModel, error) {
+	if ctx == nil {
+		return provider.ProviderModel{}, errors.New("设置模型能力覆盖的上下文不能为空")
+	}
+	if !validModelID(modelID) || expectedVersion < 1 {
+		return provider.ProviderModel{}, provider.ErrStaleResource
+	}
+	overrideJSON, err := override.JSON()
+	if err != nil || provider.ValidateCapabilityOverride(overrideJSON) != nil {
+		return provider.ProviderModel{}, provider.ErrInvalidCapabilityOverride
+	}
+	if err := validateAuditEvent(audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("开始设置模型能力覆盖事务失败: %w", err)
+	}
+	defer transaction.Rollback()
+	current, err := scanProviderModel(transaction.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM provider_models WHERE id=? AND deleted_at IS NULL`, modelID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return provider.ProviderModel{}, provider.ErrModelNotFound
+	}
+	if err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if current.Version != expectedVersion {
+		return provider.ProviderModel{}, provider.ErrStaleResource
+	}
+	result, err := transaction.ExecContext(ctx, `UPDATE provider_models SET capability_override_json=?,version=version+1,updated_at=? WHERE id=? AND version=? AND deleted_at IS NULL`, string(overrideJSON), audit.CreatedAt.UTC().UnixMilli(), modelID, expectedVersion)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("设置模型能力覆盖失败: %w", err)
+	}
+	if err := requireUpdatedModel(ctx, transaction, result, modelID); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if err := insertAuditEvent(ctx, transaction, audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("提交模型能力覆盖事务失败: %w", err)
+	}
+	return repository.FindByID(ctx, modelID)
+}
+
 func (repository *ModelRepository) ReconcileSyncedModels(ctx context.Context, providerID string, providerSlug string, discovered []provider.SyncedModel, now time.Time) error {
 	if ctx == nil {
 		return errors.New("同步模型的上下文不能为空")
@@ -204,7 +249,7 @@ func validateSyncedModel(model provider.SyncedModel) error {
 }
 
 func validateProviderModelRecord(value provider.ProviderModel) error {
-	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.ProviderID) == "" || strings.TrimSpace(value.UpstreamModelID) == "" || !validPublicModelID(value.PublicModelID) || strings.TrimSpace(value.DisplayName) == "" || strings.TrimSpace(value.CapabilitySource) == "" || value.Version < 1 || !jsonObject(value.CapabilityOverrideJSON) || invalidTokenPointer(value.ContextWindowTokens) || invalidTokenPointer(value.MaxOutputTokens) {
+	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.ProviderID) == "" || strings.TrimSpace(value.UpstreamModelID) == "" || !validPublicModelID(value.PublicModelID) || strings.TrimSpace(value.DisplayName) == "" || strings.TrimSpace(value.CapabilitySource) == "" || value.Version < 1 || provider.ValidateCapabilityOverride(value.CapabilityOverrideJSON) != nil || invalidTokenPointer(value.ContextWindowTokens) || invalidTokenPointer(value.MaxOutputTokens) {
 		return provider.ErrInvalidModel
 	}
 	if value.Source != provider.ModelSourceUpstream && value.Source != provider.ModelSourceAdapterDefault && value.Source != provider.ModelSourceManual && value.Source != provider.ModelSourceOAuth {
@@ -273,7 +318,7 @@ func (repository *ModelRepository) List(ctx context.Context, query provider.Mode
 		arguments = append(arguments, boolInteger(*query.Enabled))
 	}
 	if query.Capability != "" {
-		conditions = append(conditions, modelCapabilityColumn(query.Capability)+"=1")
+		conditions = append(conditions, modelCapabilityCondition(query.Capability))
 	}
 	if query.Search != "" {
 		conditions = append(conditions, "(public_model_id LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')")
@@ -359,6 +404,15 @@ func validateModelPageQuery(query provider.ModelPageQuery) error {
 		return provider.ErrInvalidModel
 	}
 	return nil
+}
+
+func modelCapabilityCondition(capability string) string {
+	column := modelCapabilityColumn(capability)
+	if column == "" {
+		return ""
+	}
+	// 字段名来自固定 allowlist；覆盖优先于上游列，筛选语义与路由使用的有效能力一致。
+	return "COALESCE(json_extract(capability_override_json, '$." + column + "'), " + column + ")=1"
 }
 
 func modelCapabilityColumn(capability string) string {

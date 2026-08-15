@@ -1,5 +1,5 @@
 import { type ChangeEvent, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { desktopApi, type CreateProviderInput, type DashboardSnapshot, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
+import { desktopApi, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
 
 type PageID = "services" | "models" | "clients" | "logs" | "settings";
 type CopyState = "idle" | "copied" | "failed";
@@ -37,6 +37,35 @@ const modelCapabilityLabels = {
 
 type ModelCapability = keyof typeof modelCapabilityLabels;
 type ModelEnabledFilter = "all" | "enabled" | "disabled";
+
+type ModelCapabilityValues = Record<ModelCapability, boolean>;
+
+const modelCapabilityOverrideKeys: Record<ModelCapability, keyof ModelCapabilityOverride> = {
+  streaming: "supports_streaming",
+  tools: "supports_tools",
+  parallel_tools: "supports_parallel_tools",
+  reasoning: "supports_reasoning",
+  thinking: "supports_thinking",
+  vision: "supports_vision",
+};
+
+function capabilityValuesFromModel(model: ModelSummary | null): ModelCapabilityValues {
+  return {
+    streaming: model?.capabilities.streaming ?? false,
+    tools: model?.capabilities.tools ?? false,
+    parallel_tools: model?.capabilities.parallel_tools ?? false,
+    reasoning: model?.capabilities.reasoning ?? false,
+    thinking: model?.capabilities.thinking ?? false,
+    vision: model?.capabilities.vision ?? false,
+  };
+}
+
+function capabilityOverrideFromValues(values: ModelCapabilityValues): ModelCapabilityOverride {
+  return (Object.keys(modelCapabilityOverrideKeys) as ModelCapability[]).reduce<ModelCapabilityOverride>((result, capability) => {
+    result[modelCapabilityOverrideKeys[capability]] = values[capability];
+    return result;
+  }, {});
+}
 type PendingModelChange = { model: ModelSummary; enabled: boolean };
 type PendingProviderChange = { provider: ProviderSummary; enabled: boolean };
 type PendingProviderDelete = { provider: ProviderSummary };
@@ -325,7 +354,7 @@ function ClientConfigPage({
   );
 }
 
-function ModelRow({ model, actionPending, onRequestChange }: { model: ModelSummary; actionPending: boolean; onRequestChange: (model: ModelSummary, enabled: boolean) => void }) {
+function ModelRow({ model, actionPending, onRequestChange, onRequestEdit }: { model: ModelSummary; actionPending: boolean; onRequestChange: (model: ModelSummary, enabled: boolean) => void; onRequestEdit: (model: ModelSummary) => void }) {
   const capabilityLabels = (Object.keys(modelCapabilityLabels) as ModelCapability[])
     .filter((capability) => model.capabilities[capability])
     .map((capability) => modelCapabilityLabels[capability]);
@@ -333,6 +362,9 @@ function ModelRow({ model, actionPending, onRequestChange }: { model: ModelSumma
   const handleToggle = useCallback(() => {
     onRequestChange(model, !model.enabled);
   }, [model, onRequestChange]);
+  const handleEdit = useCallback(() => {
+    onRequestEdit(model);
+  }, [model, onRequestEdit]);
 
   return (
     <li className="model-row">
@@ -348,9 +380,12 @@ function ModelRow({ model, actionPending, onRequestChange }: { model: ModelSumma
       </div>
       <div className="model-meta">
         <span>{model.upstream_model_id}</span>
-        <button type="button" className={model.enabled ? "button button-secondary" : "button button-primary"} onClick={handleToggle} disabled={actionPending || (model.lifecycle_status !== "available" && model.lifecycle_status !== "degraded" && !model.enabled)}>
-          {actionPending ? "正在更新" : model.enabled ? "停用" : "启用"}
-        </button>
+        <div className="model-actions">
+          <button type="button" className="button button-secondary" onClick={handleEdit} disabled={actionPending}>能力</button>
+          <button type="button" className={model.enabled ? "button button-secondary" : "button button-primary"} onClick={handleToggle} disabled={actionPending || (model.lifecycle_status !== "available" && model.lifecycle_status !== "degraded" && !model.enabled)}>
+            {actionPending ? "正在更新" : model.enabled ? "停用" : "启用"}
+          </button>
+        </div>
       </div>
     </li>
   );
@@ -371,6 +406,7 @@ function ModelPage({
   onNextPage,
   onRefresh,
   onRequestChange,
+  onRequestEdit,
 }: {
   runtime: RuntimeSnapshot | undefined;
   page: ModelPageData | null;
@@ -386,6 +422,7 @@ function ModelPage({
   onNextPage: () => void;
   onRefresh: () => void;
   onRequestChange: (model: ModelSummary, enabled: boolean) => void;
+  onRequestEdit: (model: ModelSummary) => void;
 }) {
   const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -435,7 +472,7 @@ function ModelPage({
       {page && page.data.length > 0 ? (
         <>
           <ul className="model-list" aria-label="已同步模型">
-            {page.data.map((model) => <ModelRow key={model.id} model={model} actionPending={actionPendingID === model.id} onRequestChange={onRequestChange} />)}
+            {page.data.map((model) => <ModelRow key={model.id} model={model} actionPending={actionPendingID === model.id} onRequestChange={onRequestChange} onRequestEdit={onRequestEdit} />)}
           </ul>
           {page.next_cursor ? <div className="model-pagination"><button type="button" className="button button-secondary" onClick={onNextPage} disabled={loading || actionPendingID !== null}>下一页</button></div> : null}
         </>
@@ -447,6 +484,55 @@ function ModelPage({
 function ProviderDeleteDialog({ provider, pending, onConfirm, onCancel }: { provider: ProviderSummary | null; pending: boolean; onConfirm: () => void; onCancel: () => void }) {
   if (!provider) return null;
   return <div className="dialog-backdrop" role="presentation"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="provider-delete-title"><h2 id="provider-delete-title">删除服务</h2><p>会移除服务配置及其本地模型目录。此操作不能撤销；上游账户与密钥不会被修改。</p><code>{provider.name}</code><div className="button-group"><button type="button" className="button button-secondary" onClick={onCancel} disabled={pending}>取消</button><button type="button" className="button button-danger" onClick={onConfirm} disabled={pending} autoFocus>{pending ? "正在删除" : "确认删除"}</button></div></section></div>;
+}
+
+function EditModelCapabilitiesDialog({ model, pending, onClose, onUpdate }: { model: ModelSummary | null; pending: boolean; onClose: () => void; onUpdate: (model: ModelSummary, capabilityOverride: ModelCapabilityOverride) => void }) {
+  const [values, setValues] = useState<ModelCapabilityValues>(() => capabilityValuesFromModel(model));
+
+  useEffect(() => {
+    setValues(capabilityValuesFromModel(model));
+  }, [model]);
+
+  const handleToggle = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const capability = event.currentTarget.name as ModelCapability;
+    const checked = event.currentTarget.checked;
+    setValues((current) => ({ ...current, [capability]: checked }));
+  }, []);
+  const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (model) onUpdate(model, capabilityOverrideFromValues(values));
+  }, [model, onUpdate, values]);
+  const handleReset = useCallback(() => {
+    if (model) onUpdate(model, {});
+  }, [model, onUpdate]);
+
+  if (!model) return null;
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section className="confirm-dialog model-capability-dialog" role="dialog" aria-modal="true" aria-labelledby="model-capability-title">
+        <h2 id="model-capability-title">模型能力</h2>
+        <p>覆盖只影响本地网关的预检与路由，不能让上游实际支持未实现的能力。</p>
+        <code>{model.public_model_id}</code>
+        <form onSubmit={handleSubmit}>
+          <fieldset className="capability-settings" disabled={pending}>
+            <legend>本地声明</legend>
+            {(Object.keys(modelCapabilityLabels) as ModelCapability[]).map((capability) => (
+              <label key={capability} className="capability-setting">
+                <input name={capability} type="checkbox" checked={values[capability]} onChange={handleToggle} />
+                <span>{modelCapabilityLabels[capability]}</span>
+              </label>
+            ))}
+          </fieldset>
+          <p className="dialog-note">当前来源：{model.capability_override && Object.keys(model.capability_override).length > 0 ? "已覆盖" : model.capability_source}</p>
+          <div className="button-group">
+            <button type="button" className="button button-secondary" onClick={onClose} disabled={pending}>取消</button>
+            <button type="button" className="button button-secondary" onClick={handleReset} disabled={pending}>恢复上游声明</button>
+            <button type="submit" className="button button-primary" disabled={pending} autoFocus>{pending ? "正在保存" : "保存能力设置"}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function ModelChangeDialog({ change, pending, onConfirm, onCancel }: { change: PendingModelChange | null; pending: boolean; onConfirm: () => void; onCancel: () => void }) {
@@ -530,6 +616,7 @@ export function App() {
   const [modelLoading, setModelLoading] = useState(false);
   const [modelActionPendingID, setModelActionPendingID] = useState<string | null>(null);
   const [pendingModelChange, setPendingModelChange] = useState<PendingModelChange | null>(null);
+  const [editingModel, setEditingModel] = useState<ModelSummary | null>(null);
   const [modelSearch, setModelSearch] = useState("");
   const [modelEnabledFilter, setModelEnabledFilter] = useState<ModelEnabledFilter>("all");
   const [modelCapabilityFilter, setModelCapabilityFilter] = useState<"" | ModelCapability>("");
@@ -854,6 +941,20 @@ export function App() {
     if (modelActionPendingID === null) setPendingModelChange(null);
   }, [modelActionPendingID]);
 
+  const handleUpdateModelCapabilities = useCallback(async (model: ModelSummary, capabilityOverride: ModelCapabilityOverride) => {
+    setModelActionPendingID(model.id);
+    try {
+      await desktopApi.updateModelCapabilities(model.id, { version: model.version, capability_override: capabilityOverride });
+      setEditingModel(null);
+      await loadModels(modelQuery);
+      setError(null);
+    } catch (reason) {
+      setError(safeMessage(reason, "更新模型能力失败"));
+    } finally {
+      setModelActionPendingID(null);
+    }
+  }, [loadModels, modelQuery]);
+
   const copyText = useCallback(async (value: string, updateState: (state: CopyState) => void) => {
     if (!navigator.clipboard) {
       updateState("failed");
@@ -880,7 +981,7 @@ export function App() {
   const renderPage = () => {
     if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestEdit={setEditingProvider} onRequestDelete={handleRequestProviderDelete} />;
     if (activePage === "models") {
-      return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} />;
+      return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} onRequestEdit={setEditingModel} />;
     }
     if (activePage === "clients") {
       return <ClientConfigPage runtime={runtime} actionPending={actionPending} keyName={keyName} oneTimeKey={oneTimeKey} copyState={copyState} addressCopyState={addressCopyState} onKeyNameChange={setKeyName} onCreateKey={handleCreateKey} onCopyKey={handleCopyKey} onCopyAddress={handleCopyAddress} />;
@@ -940,6 +1041,7 @@ export function App() {
       <EditProviderDialog provider={editingProvider} pending={providerActionPendingID !== null} onClose={() => setEditingProvider(null)} onUpdate={handleUpdateProvider} />
       <ProviderChangeDialog change={pendingProviderChange} pending={providerActionPendingID !== null} onConfirm={handleConfirmProviderChange} onCancel={handleCancelProviderChange} />
       <ProviderDeleteDialog provider={pendingProviderDelete?.provider ?? null} pending={providerActionPendingID !== null} onConfirm={handleConfirmProviderDelete} onCancel={handleCancelProviderDelete} />
+      <EditModelCapabilitiesDialog model={editingModel} pending={modelActionPendingID === editingModel?.id} onClose={() => setEditingModel(null)} onUpdate={handleUpdateModelCapabilities} />
       <ModelChangeDialog change={pendingModelChange} pending={modelActionPendingID !== null} onConfirm={handleConfirmModelChange} onCancel={handleCancelModelChange} />
     </main>
   );

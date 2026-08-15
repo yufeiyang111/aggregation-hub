@@ -29,6 +29,8 @@ type recordingModelService struct {
 	enableVersion  int64
 	disableID      string
 	disableVersion int64
+	updateID       string
+	updateInput    provider.UpdateModelCapabilitiesInput
 	result         provider.ModelDTO
 	err            error
 }
@@ -42,6 +44,12 @@ func (service *recordingModelService) Enable(_ context.Context, id string, versi
 func (service *recordingModelService) Disable(_ context.Context, id string, version int64) (provider.ModelDTO, error) {
 	service.disableID = id
 	service.disableVersion = version
+	return service.result, service.err
+}
+
+func (service *recordingModelService) UpdateCapabilities(_ context.Context, id string, input provider.UpdateModelCapabilitiesInput) (provider.ModelDTO, error) {
+	service.updateID = id
+	service.updateInput = input
 	return service.result, service.err
 }
 
@@ -97,6 +105,22 @@ func TestControlPlaneModelRoutesValidateAuthQueryAndVersion(t *testing.T) {
 	server.Handler().ServeHTTP(enableResponse, enable)
 	if enableResponse.Code != http.StatusOK || service.enableID != model.ID || service.enableVersion != 3 {
 		t.Fatalf("启用模型路由错误: status=%d id=%q version=%d", enableResponse.Code, service.enableID, service.enableVersion)
+	}
+
+	invalidOverride := httptest.NewRequest(http.MethodPatch, "/internal/v1/models/"+model.ID, bytes.NewBufferString(`{"version":3,"capability_override":{"unsupported":true}}`))
+	invalidOverride.Header.Set(controlplane.ManagementTokenHeader, testManagementToken)
+	invalidOverrideResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(invalidOverrideResponse, invalidOverride)
+	if invalidOverrideResponse.Code != http.StatusBadRequest || service.updateID != "" {
+		t.Fatalf("未知能力字段不应调用服务: status=%d id=%q", invalidOverrideResponse.Code, service.updateID)
+	}
+
+	update := httptest.NewRequest(http.MethodPatch, "/internal/v1/models/"+model.ID, bytes.NewBufferString(`{"version":3,"capability_override":{"supports_tools":false}}`))
+	update.Header.Set(controlplane.ManagementTokenHeader, testManagementToken)
+	updateResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(updateResponse, update)
+	if updateResponse.Code != http.StatusOK || service.updateID != model.ID || service.updateInput.ExpectedVersion != 3 || service.updateInput.CapabilityOverride.Tools == nil || *service.updateInput.CapabilityOverride.Tools {
+		t.Fatalf("更新模型能力路由错误: status=%d id=%q input=%+v", updateResponse.Code, service.updateID, service.updateInput)
 	}
 }
 

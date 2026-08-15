@@ -173,6 +173,30 @@ pub struct ModelCapabilities {
     pub vision: bool,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelCapabilityOverride {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_streaming: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_parallel_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_reasoning: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_thinking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_vision: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateModelCapabilitiesInput {
+    pub version: i64,
+    pub capability_override: ModelCapabilityOverride,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelSummary {
     pub id: String,
@@ -187,6 +211,7 @@ pub struct ModelSummary {
     pub context_window_tokens: Option<i64>,
     pub max_output_tokens: Option<i64>,
     pub capability_source: String,
+    pub capability_override: ModelCapabilityOverride,
     pub version: i64,
 }
 
@@ -241,6 +266,12 @@ struct CreateLocalKeyResponse {
 #[derive(Serialize)]
 struct VersionRequest {
     version: i64,
+}
+
+#[derive(Serialize)]
+struct ModelCapabilitiesUpdateRequest {
+    version: i64,
+    capability_override: ModelCapabilityOverride,
 }
 
 pub(crate) fn validate_create_provider(input: &CreateProviderInput) -> Result<(), String> {
@@ -593,6 +624,39 @@ impl CoreProcessManager {
             token.as_str(),
             &path,
             &VersionRequest { version },
+        )
+    }
+
+    pub fn update_model_capabilities(
+        &self,
+        id: String,
+        input: UpdateModelCapabilitiesInput,
+    ) -> Result<ModelSummary, String> {
+        if !valid_model_id(&id) || input.version < 1 {
+            return Err("模型标识或版本无效".to_owned());
+        }
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        let path = format!("/internal/v1/models/{id}");
+        control_client::patch_json(
+            &ready.control_url,
+            token.as_str(),
+            &path,
+            &ModelCapabilitiesUpdateRequest {
+                version: input.version,
+                capability_override: input.capability_override,
+            },
         )
     }
 

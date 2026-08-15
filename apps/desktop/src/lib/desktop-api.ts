@@ -80,6 +80,20 @@ export interface ModelCapabilities {
   vision: boolean;
 }
 
+export interface ModelCapabilityOverride {
+  supports_streaming?: boolean;
+  supports_tools?: boolean;
+  supports_parallel_tools?: boolean;
+  supports_reasoning?: boolean;
+  supports_thinking?: boolean;
+  supports_vision?: boolean;
+}
+
+export interface UpdateModelCapabilitiesInput {
+  version: number;
+  capability_override: ModelCapabilityOverride;
+}
+
 export interface ModelSummary {
   id: string;
   provider_id: string;
@@ -93,6 +107,7 @@ export interface ModelSummary {
   context_window_tokens: number | null;
   max_output_tokens: number | null;
   capability_source: string;
+  capability_override: ModelCapabilityOverride;
   version: number;
 }
 
@@ -130,6 +145,7 @@ export const desktopApi = {
   testProvider: (id: string) => invoke<ProviderTestResult>("test_provider", { id }),
   syncProviderModels: (id: string) => invoke<SyncModelsResult>("sync_provider_models", { id }),
   listModels: (query: ModelListQuery) => invoke<ModelPage>("list_models", { query }),
+  updateModelCapabilities: (id: string, input: UpdateModelCapabilitiesInput) => invoke<ModelSummary>("update_model_capabilities", { id, input }),
   enableModel: (id: string, version: number) => invoke<ModelSummary>("enable_model", { id, version }),
   disableModel: (id: string, version: number) => invoke<ModelSummary>("disable_model", { id, version }),
   createLocalKey: (name: string) => invoke<OneTimeLocalKey>("create_local_key", { name }),

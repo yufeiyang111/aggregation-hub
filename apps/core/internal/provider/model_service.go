@@ -42,6 +42,39 @@ func (service *ModelService) Disable(ctx context.Context, modelID string, expect
 	return service.setEnabled(ctx, modelID, expectedVersion, false)
 }
 
+// UpdateCapabilities 覆盖模型的能力声明；空覆盖对象代表恢复使用上游同步结果。
+func (service *ModelService) UpdateCapabilities(ctx context.Context, modelID string, input UpdateModelCapabilitiesInput) (ModelDTO, error) {
+	if ctx == nil || modelID == "" || len(modelID) > 64 || input.ExpectedVersion < 1 {
+		return ModelDTO{}, ErrInvalidModel
+	}
+	overrideJSON, err := input.CapabilityOverride.JSON()
+	if err != nil || ValidateCapabilityOverride(overrideJSON) != nil {
+		return ModelDTO{}, ErrInvalidCapabilityOverride
+	}
+	now := service.now().UTC()
+	auditID, err := service.newID(now)
+	if err != nil {
+		return ModelDTO{}, fmt.Errorf("生成模型能力覆盖审计标识失败: %w", err)
+	}
+	mode := "custom"
+	eventType := "model_capability_override_updated"
+	if input.CapabilityOverride.Empty() {
+		mode = "upstream_default"
+		eventType = "model_capability_override_reset"
+	}
+	detail, err := json.Marshal(struct {
+		Mode string `json:"mode"`
+	}{Mode: mode})
+	if err != nil {
+		return ModelDTO{}, fmt.Errorf("编码模型能力覆盖审计详情失败: %w", err)
+	}
+	value, err := service.repository.SetCapabilityOverride(ctx, modelID, input.ExpectedVersion, input.CapabilityOverride, AuditEvent{ID: auditID, EventType: eventType, EntityType: "model", EntityID: modelID, DetailJSON: detail, CreatedAt: now})
+	if err != nil {
+		return ModelDTO{}, err
+	}
+	return modelDTO(value), nil
+}
+
 func (service *ModelService) setEnabled(ctx context.Context, modelID string, expectedVersion int64, enabled bool) (ModelDTO, error) {
 	if ctx == nil {
 		return ModelDTO{}, fmt.Errorf("设置模型状态: %w", ErrInvalidModel)
@@ -69,21 +102,29 @@ func (service *ModelService) setEnabled(ctx context.Context, modelID string, exp
 }
 
 func modelDTO(value ProviderModel) ModelDTO {
+	override, err := ParseCapabilityOverride(value.CapabilityOverrideJSON)
+	if err != nil {
+		override = CapabilityOverride{}
+	}
+	effective, err := EffectiveCapabilities(value.Capabilities, value.CapabilityOverrideJSON)
+	if err != nil {
+		effective = value.Capabilities
+	}
 	return ModelDTO{
-		ID:                     value.ID,
-		ProviderID:             value.ProviderID,
-		UpstreamModelID:        value.UpstreamModelID,
-		PublicModelID:          value.PublicModelID,
-		DisplayName:            value.DisplayName,
-		Source:                 value.Source,
-		LifecycleStatus:        value.LifecycleStatus,
-		Enabled:                value.Enabled,
-		Capabilities:           ModelCapabilitiesDTO{Streaming: value.Capabilities.Streaming, Tools: value.Capabilities.Tools, ParallelTools: value.Capabilities.ParallelTools, Reasoning: value.Capabilities.Reasoning, Thinking: value.Capabilities.Thinking, Vision: value.Capabilities.Vision},
-		ContextWindowTokens:    cloneInt64(value.ContextWindowTokens),
-		MaxOutputTokens:        cloneInt64(value.MaxOutputTokens),
-		CapabilitySource:       value.CapabilitySource,
-		CapabilityOverrideJSON: append(json.RawMessage(nil), value.CapabilityOverrideJSON...),
-		Version:                value.Version,
+		ID:                  value.ID,
+		ProviderID:          value.ProviderID,
+		UpstreamModelID:     value.UpstreamModelID,
+		PublicModelID:       value.PublicModelID,
+		DisplayName:         value.DisplayName,
+		Source:              value.Source,
+		LifecycleStatus:     value.LifecycleStatus,
+		Enabled:             value.Enabled,
+		Capabilities:        ModelCapabilitiesDTO{Streaming: effective.Streaming, Tools: effective.Tools, ParallelTools: effective.ParallelTools, Reasoning: effective.Reasoning, Thinking: effective.Thinking, Vision: effective.Vision},
+		ContextWindowTokens: cloneInt64(value.ContextWindowTokens),
+		MaxOutputTokens:     cloneInt64(value.MaxOutputTokens),
+		CapabilitySource:    value.CapabilitySource,
+		CapabilityOverride:  override,
+		Version:             value.Version,
 	}
 }
 

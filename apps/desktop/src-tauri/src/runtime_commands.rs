@@ -128,6 +128,18 @@ pub async fn list_models(
 }
 
 #[tauri::command]
+pub async fn update_model_capabilities(
+    id: String,
+    input: super::core_process::UpdateModelCapabilitiesInput,
+    state: State<'_, CoreProcessManager>,
+) -> Result<ModelSummary, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.update_model_capabilities(id, input))
+        .await
+        .map_err(|_| "更新模型能力失败".to_owned())?
+}
+
+#[tauri::command]
 pub async fn enable_model(
     id: String,
     version: i64,
