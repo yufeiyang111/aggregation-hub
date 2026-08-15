@@ -28,4 +28,3 @@
     "error": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "error" }, "code": { "type": "string", "minLength": 1 }, "message": { "type": "string", "minLength": 1 } }, "required": ["code", "message"] }] }
   }
 }
-
