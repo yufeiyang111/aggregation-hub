@@ -6,7 +6,7 @@ $targetTriple = 'x86_64-pc-windows-msvc'
 $coreDirectory = Join-Path $root 'apps/core'
 $outputDirectory = Join-Path $root 'apps/desktop/src-tauri/binaries'
 $outputPath = Join-Path $outputDirectory ("aggregation-hub-core-{0}.exe" -f $targetTriple)
-$goCommand = Get-Command 'go' -CommandType Application -ErrorAction Stop
+$goCommand = @(Get-Command 'go' -CommandType Application -ErrorAction Stop)[0]
 
 $previousGoOs = $env:GOOS
 $previousGoArch = $env:GOARCH
