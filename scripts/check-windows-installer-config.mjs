@@ -37,7 +37,9 @@ requireValue(/^on:\s*\r?\n\s*push:\s*\r?\n\s*tags:\s*\r?\n\s*-\s*["']v\*["']/m.t
 requireValue(/^permissions:\s*\r?\n\s*contents:\s*write/m.test(workflow), "Pre-release workflow 必须只授予 contents: write，以创建同仓库 Release。");
 requireValue(workflow.includes("actions/checkout@v4") && workflow.includes("persist-credentials: false"), "检出步骤必须禁用持久化 GitHub 凭据。");
 requireValue(workflow.includes("pnpm install --frozen-lockfile"), "Pre-release workflow 必须使用 frozen lockfile 安装依赖。");
-requireValue(workflow.includes("pnpm release:windows -- -Version \"$env:RELEASE_VERSION\""), "Pre-release workflow 必须将标签解析出的版本传给受控发布构建脚本。");
+requireValue(workflow.includes("$config = Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json") && workflow.includes("if ([string]$config.version -cne $version)"), "Pre-release workflow 必须在构建前校验标签版本与 Tauri 版本一致。");
+requireValue(workflow.includes("run: pnpm release:windows"), "Pre-release workflow 必须执行受控发布构建脚本。");
+requireValue(!workflow.includes("release:windows -- -Version"), "Pre-release workflow 不得向 PowerShell 发布脚本透传孤立的 -- 参数。");
 requireValue(workflow.includes("actions/upload-artifact@v4"), "Pre-release workflow 必须保留构建 Artifact 以便诊断。");
 requireValue(workflow.includes("actions/github-script@v7"), "Pre-release workflow 必须使用 GitHub 官方 github-script Action 创建 Release。");
 requireValue(workflow.includes("github.rest.repos.createRelease") && workflow.includes("prerelease: true"), "Pre-release workflow 必须创建 GitHub 预发布版本。");

@@ -13,7 +13,7 @@ func TestHandlerReturnsMinimalHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	health.NewHandler("0.1.0").ServeHTTP(rec, req)
+	health.NewHandler("0.1.0-rc.1").ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d", rec.Code)
@@ -26,7 +26,7 @@ func TestHandlerReturnsMinimalHealth(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["status"] != "ok" || body["version"] != "0.1.0" || body["data_plane"] != "ready" {
+	if body["status"] != "ok" || body["version"] != "0.1.0-rc.1" || body["data_plane"] != "ready" {
 		t.Fatalf("unexpected body: %#v", body)
 	}
 	if len(body) != 3 {
@@ -40,7 +40,7 @@ func TestHandlerRejectsNonGet(t *testing.T) {
 			req := httptest.NewRequest(method, "/health", nil)
 			rec := httptest.NewRecorder()
 
-			health.NewHandler("0.1.0").ServeHTTP(rec, req)
+			health.NewHandler("0.1.0-rc.1").ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusMethodNotAllowed {
 				t.Fatalf("status=%d", rec.Code)

@@ -77,7 +77,7 @@ func TestCoreStartupCreatesLocalKeyAndProtectsDataPlane(t *testing.T) {
 			bytes.NewReader(bootstrapBody),
 			outputWriter,
 			&stderr,
-			config.Runtime{Version: "0.1.0", ListenPort: 0},
+			config.Runtime{Version: "0.1.0-rc.1", ListenPort: 0},
 		)
 	}()
 
