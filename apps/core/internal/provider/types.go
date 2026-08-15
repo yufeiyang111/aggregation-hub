@@ -88,23 +88,25 @@ type Provider struct {
 }
 
 type ProviderModel struct {
-	ID                     string
-	ProviderID             string
-	UpstreamModelID        string
-	PublicModelID          string
-	DisplayName            string
-	Source                 ModelSource
-	LifecycleStatus        ModelStatus
-	Enabled                bool
-	Capabilities           Capabilities
-	ContextWindowTokens    *int64
-	MaxOutputTokens        *int64
-	CapabilitySource       string
-	CapabilityOverrideJSON json.RawMessage
-	Version                int64
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
-	DeletedAt              *time.Time
+	ID                          string
+	ProviderID                  string
+	UpstreamModelID             string
+	PublicModelID               string
+	DisplayName                 string
+	Source                      ModelSource
+	LifecycleStatus             ModelStatus
+	Enabled                     bool
+	Capabilities                Capabilities
+	ContextWindowTokens         *int64
+	MaxOutputTokens             *int64
+	ContextWindowOverrideTokens *int64
+	MaxOutputOverrideTokens     *int64
+	CapabilitySource            string
+	CapabilityOverrideJSON      json.RawMessage
+	Version                     int64
+	CreatedAt                   time.Time
+	UpdatedAt                   time.Time
+	DeletedAt                   *time.Time
 }
 
 type SyncedModel struct {
@@ -168,6 +170,9 @@ type ModelRepository interface {
 	List(context.Context, ModelPageQuery) (ModelPage, error)
 	SetEnabled(context.Context, string, int64, bool, AuditEvent) (ProviderModel, error)
 	SetCapabilityOverride(context.Context, string, int64, CapabilityOverride, AuditEvent) (ProviderModel, error)
+	SetLimitOverride(context.Context, string, int64, ModelLimitOverride, AuditEvent) (ProviderModel, error)
+	CreateManual(context.Context, CreateManualModelInput, AuditEvent) (ProviderModel, error)
+	SoftDeleteManual(context.Context, string, int64, AuditEvent) error
 	ReconcileSyncedModels(context.Context, string, string, []SyncedModel, time.Time) error
 }
 
@@ -195,6 +200,23 @@ type UpdateProviderInput struct {
 type UpdateModelCapabilitiesInput struct {
 	ExpectedVersion    int64
 	CapabilityOverride CapabilityOverride
+}
+
+// UpdateModelLimitsInput 允许覆盖可选的上下文窗口与最大输出；空对象代表恢复上游声明。
+type UpdateModelLimitsInput struct {
+	ExpectedVersion int64
+	LimitOverride   ModelLimitOverride
+}
+
+// CreateManualModelInput 创建一个不会被同步流程覆盖的本地模型声明。
+type CreateManualModelInput struct {
+	ID                  string
+	ProviderID          string
+	UpstreamModelID     string
+	DisplayName         string
+	Capabilities        Capabilities
+	ContextWindowTokens *int64
+	MaxOutputTokens     *int64
 }
 
 type CredentialStateDTO struct {
@@ -264,6 +286,7 @@ type ModelDTO struct {
 	MaxOutputTokens     *int64               `json:"max_output_tokens,omitempty"`
 	CapabilitySource    string               `json:"capability_source"`
 	CapabilityOverride  CapabilityOverride   `json:"capability_override"`
+	LimitOverride       ModelLimitOverride   `json:"limit_override"`
 	Version             int64                `json:"version"`
 }
 

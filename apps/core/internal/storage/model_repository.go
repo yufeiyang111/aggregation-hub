@@ -13,7 +13,7 @@ import (
 	"aggregationhub.local/core/internal/provider"
 )
 
-const modelColumns = `id,provider_id,upstream_model_id,public_model_id,display_name,source,lifecycle_status,enabled,supports_streaming,supports_tools,supports_parallel_tools,supports_reasoning,supports_thinking,supports_vision,context_window_tokens,max_output_tokens,capability_source,capability_override_json,version,created_at,updated_at,deleted_at`
+const modelColumns = `id,provider_id,upstream_model_id,public_model_id,display_name,source,lifecycle_status,enabled,supports_streaming,supports_tools,supports_parallel_tools,supports_reasoning,supports_thinking,supports_vision,context_window_tokens,max_output_tokens,context_window_override_tokens,max_output_override_tokens,capability_source,capability_override_json,version,created_at,updated_at,deleted_at`
 
 type ModelRepository struct{ database *sql.DB }
 
@@ -58,6 +58,137 @@ func (repository *ModelRepository) FindByPublicID(ctx context.Context, publicMod
 		return provider.ProviderModel{}, err
 	}
 	return value, nil
+}
+
+func (repository *ModelRepository) CreateManual(ctx context.Context, input provider.CreateManualModelInput, audit provider.AuditEvent) (provider.ProviderModel, error) {
+	if ctx == nil {
+		return provider.ProviderModel{}, errors.New("创建手工模型的上下文不能为空")
+	}
+	if !validModelID(input.ID) || strings.TrimSpace(input.ProviderID) == "" || strings.TrimSpace(input.UpstreamModelID) != input.UpstreamModelID || len(input.UpstreamModelID) < 1 || len(input.UpstreamModelID) > 255 || strings.TrimSpace(input.DisplayName) != input.DisplayName || len(input.DisplayName) < 1 || len(input.DisplayName) > 255 || invalidTokenPointer(input.ContextWindowTokens) || invalidTokenPointer(input.MaxOutputTokens) {
+		return provider.ProviderModel{}, provider.ErrInvalidModel
+	}
+	if err := validateAuditEvent(audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("开始创建手工模型事务失败: %w", err)
+	}
+	defer transaction.Rollback()
+	var providerSlug string
+	if err := transaction.QueryRowContext(ctx, `SELECT slug FROM providers WHERE id=? AND deleted_at IS NULL`, input.ProviderID).Scan(&providerSlug); errors.Is(err, sql.ErrNoRows) {
+		return provider.ProviderModel{}, provider.ErrProviderNotFound
+	} else if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("读取手工模型 Provider 失败: %w", err)
+	}
+	publicModelID := providerSlug + "/" + input.UpstreamModelID
+	if !validPublicModelID(publicModelID) {
+		return provider.ProviderModel{}, provider.ErrInvalidModel
+	}
+	var existing int
+	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*) FROM provider_models WHERE public_model_id=?`, publicModelID).Scan(&existing); err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("检查手工模型重复项失败: %w", err)
+	}
+	if existing != 0 {
+		return provider.ProviderModel{}, provider.ErrInvalidModel
+	}
+	now := audit.CreatedAt.UTC().UnixMilli()
+	_, err = transaction.ExecContext(ctx, `INSERT INTO provider_models(id,provider_id,upstream_model_id,public_model_id,display_name,source,lifecycle_status,enabled,supports_streaming,supports_tools,supports_parallel_tools,supports_reasoning,supports_thinking,supports_vision,context_window_tokens,max_output_tokens,context_window_override_tokens,max_output_override_tokens,capability_source,capability_override_json,version,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,NULL,NULL,'manual','{}',1,?,?,NULL)`, input.ID, input.ProviderID, input.UpstreamModelID, publicModelID, input.DisplayName, provider.ModelSourceManual, provider.ModelStatusAvailable, boolInteger(input.Capabilities.Streaming), boolInteger(input.Capabilities.Tools), boolInteger(input.Capabilities.ParallelTools), boolInteger(input.Capabilities.Reasoning), boolInteger(input.Capabilities.Thinking), boolInteger(input.Capabilities.Vision), nullableInt64(input.ContextWindowTokens), nullableInt64(input.MaxOutputTokens), now, now)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("创建手工模型失败: %w", err)
+	}
+	if err := insertAuditEvent(ctx, transaction, audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("提交手工模型事务失败: %w", err)
+	}
+	return repository.FindByID(ctx, input.ID)
+}
+
+func (repository *ModelRepository) SetLimitOverride(ctx context.Context, modelID string, expectedVersion int64, override provider.ModelLimitOverride, audit provider.AuditEvent) (provider.ProviderModel, error) {
+	if ctx == nil {
+		return provider.ProviderModel{}, errors.New("设置模型参数覆盖的上下文不能为空")
+	}
+	if !validModelID(modelID) || expectedVersion < 1 || invalidTokenPointer(override.ContextWindowTokens) || invalidTokenPointer(override.MaxOutputTokens) {
+		return provider.ProviderModel{}, provider.ErrInvalidModel
+	}
+	if err := validateAuditEvent(audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("开始设置模型参数覆盖事务失败: %w", err)
+	}
+	defer transaction.Rollback()
+	current, err := scanProviderModel(transaction.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM provider_models WHERE id=? AND deleted_at IS NULL`, modelID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return provider.ProviderModel{}, provider.ErrModelNotFound
+	}
+	if err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if current.Version != expectedVersion {
+		return provider.ProviderModel{}, provider.ErrStaleResource
+	}
+	result, err := transaction.ExecContext(ctx, `UPDATE provider_models SET context_window_override_tokens=?,max_output_override_tokens=?,version=version+1,updated_at=? WHERE id=? AND version=? AND deleted_at IS NULL`, nullableInt64(override.ContextWindowTokens), nullableInt64(override.MaxOutputTokens), audit.CreatedAt.UTC().UnixMilli(), modelID, expectedVersion)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("设置模型参数覆盖失败: %w", err)
+	}
+	if err := requireUpdatedModel(ctx, transaction, result, modelID); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if err := insertAuditEvent(ctx, transaction, audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("提交模型参数覆盖事务失败: %w", err)
+	}
+	return repository.FindByID(ctx, modelID)
+}
+
+func (repository *ModelRepository) SoftDeleteManual(ctx context.Context, modelID string, expectedVersion int64, audit provider.AuditEvent) error {
+	if ctx == nil {
+		return errors.New("删除手工模型的上下文不能为空")
+	}
+	if !validModelID(modelID) || expectedVersion < 1 {
+		return provider.ErrInvalidModel
+	}
+	if err := validateAuditEvent(audit); err != nil {
+		return err
+	}
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("开始删除手工模型事务失败: %w", err)
+	}
+	defer transaction.Rollback()
+	var source string
+	var version int64
+	if err := transaction.QueryRowContext(ctx, `SELECT source,version FROM provider_models WHERE id=? AND deleted_at IS NULL`, modelID).Scan(&source, &version); errors.Is(err, sql.ErrNoRows) {
+		return provider.ErrModelNotFound
+	} else if err != nil {
+		return fmt.Errorf("读取手工模型失败: %w", err)
+	}
+	if source != string(provider.ModelSourceManual) {
+		return provider.ErrInvalidModel
+	}
+	if version != expectedVersion {
+		return provider.ErrStaleResource
+	}
+	result, err := transaction.ExecContext(ctx, `UPDATE provider_models SET lifecycle_status='deleted',enabled=0,version=version+1,updated_at=?,deleted_at=? WHERE id=? AND version=? AND deleted_at IS NULL`, audit.CreatedAt.UTC().UnixMilli(), audit.CreatedAt.UTC().UnixMilli(), modelID, expectedVersion)
+	if err != nil {
+		return fmt.Errorf("删除手工模型失败: %w", err)
+	}
+	if err := requireUpdatedModel(ctx, transaction, result, modelID); err != nil {
+		return err
+	}
+	if err := insertAuditEvent(ctx, transaction, audit); err != nil {
+		return err
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("提交删除手工模型事务失败: %w", err)
+	}
+	return nil
 }
 
 func (repository *ModelRepository) SetCapabilityOverride(ctx context.Context, modelID string, expectedVersion int64, override provider.CapabilityOverride, audit provider.AuditEvent) (provider.ProviderModel, error) {
@@ -148,6 +279,11 @@ func (repository *ModelRepository) ReconcileSyncedModels(ctx context.Context, pr
 			if current.DeletedAt != nil {
 				continue
 			}
+			if current.Source == provider.ModelSourceManual {
+				// 手工模型是用户明确维护的声明；同步只消费同名上游结果，不覆盖它。
+				delete(existing, model.UpstreamModelID)
+				continue
+			}
 			if err := updateSyncedModel(ctx, transaction, current, model, now); err != nil {
 				return err
 			}
@@ -159,7 +295,7 @@ func (repository *ModelRepository) ReconcileSyncedModels(ctx context.Context, pr
 		}
 	}
 	for _, current := range existing {
-		if current.DeletedAt != nil || current.LifecycleStatus == provider.ModelStatusMissingUpstream {
+		if current.DeletedAt != nil || current.Source == provider.ModelSourceManual || current.LifecycleStatus == provider.ModelStatusMissingUpstream {
 			continue
 		}
 		if _, err := transaction.ExecContext(ctx, `UPDATE provider_models SET lifecycle_status='missing_upstream',version=version+1,updated_at=? WHERE id=? AND deleted_at IS NULL`, now.UnixMilli(), current.ID); err != nil {
@@ -178,10 +314,10 @@ func scanProviderModel(scanner providerModelScanner) (provider.ProviderModel, er
 	var value provider.ProviderModel
 	var source, status string
 	var enabled, streaming, tools, parallelTools, reasoning, thinking, vision int
-	var contextWindow, maxOutput, deletedAt sql.NullInt64
+	var contextWindow, maxOutput, contextWindowOverride, maxOutputOverride, deletedAt sql.NullInt64
 	var capabilityOverride string
 	var createdAt, updatedAt int64
-	if err := scanner.Scan(&value.ID, &value.ProviderID, &value.UpstreamModelID, &value.PublicModelID, &value.DisplayName, &source, &status, &enabled, &streaming, &tools, &parallelTools, &reasoning, &thinking, &vision, &contextWindow, &maxOutput, &value.CapabilitySource, &capabilityOverride, &value.Version, &createdAt, &updatedAt, &deletedAt); err != nil {
+	if err := scanner.Scan(&value.ID, &value.ProviderID, &value.UpstreamModelID, &value.PublicModelID, &value.DisplayName, &source, &status, &enabled, &streaming, &tools, &parallelTools, &reasoning, &thinking, &vision, &contextWindow, &maxOutput, &contextWindowOverride, &maxOutputOverride, &value.CapabilitySource, &capabilityOverride, &value.Version, &createdAt, &updatedAt, &deletedAt); err != nil {
 		return provider.ProviderModel{}, err
 	}
 	value.Source = provider.ModelSource(source)
@@ -190,6 +326,8 @@ func scanProviderModel(scanner providerModelScanner) (provider.ProviderModel, er
 	value.Capabilities = provider.Capabilities{Streaming: streaming == 1, Tools: tools == 1, ParallelTools: parallelTools == 1, Reasoning: reasoning == 1, Thinking: thinking == 1, Vision: vision == 1}
 	value.ContextWindowTokens = positiveIntPointer(contextWindow)
 	value.MaxOutputTokens = positiveIntPointer(maxOutput)
+	value.ContextWindowOverrideTokens = positiveIntPointer(contextWindowOverride)
+	value.MaxOutputOverrideTokens = positiveIntPointer(maxOutputOverride)
 	value.CapabilityOverrideJSON = json.RawMessage(capabilityOverride)
 	value.CreatedAt = time.UnixMilli(createdAt).UTC()
 	value.UpdatedAt = time.UnixMilli(updatedAt).UTC()
@@ -249,7 +387,7 @@ func validateSyncedModel(model provider.SyncedModel) error {
 }
 
 func validateProviderModelRecord(value provider.ProviderModel) error {
-	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.ProviderID) == "" || strings.TrimSpace(value.UpstreamModelID) == "" || !validPublicModelID(value.PublicModelID) || strings.TrimSpace(value.DisplayName) == "" || strings.TrimSpace(value.CapabilitySource) == "" || value.Version < 1 || provider.ValidateCapabilityOverride(value.CapabilityOverrideJSON) != nil || invalidTokenPointer(value.ContextWindowTokens) || invalidTokenPointer(value.MaxOutputTokens) {
+	if strings.TrimSpace(value.ID) == "" || strings.TrimSpace(value.ProviderID) == "" || strings.TrimSpace(value.UpstreamModelID) == "" || !validPublicModelID(value.PublicModelID) || strings.TrimSpace(value.DisplayName) == "" || strings.TrimSpace(value.CapabilitySource) == "" || value.Version < 1 || provider.ValidateCapabilityOverride(value.CapabilityOverrideJSON) != nil || invalidTokenPointer(value.ContextWindowTokens) || invalidTokenPointer(value.MaxOutputTokens) || invalidTokenPointer(value.ContextWindowOverrideTokens) || invalidTokenPointer(value.MaxOutputOverrideTokens) {
 		return provider.ErrInvalidModel
 	}
 	if value.Source != provider.ModelSourceUpstream && value.Source != provider.ModelSourceAdapterDefault && value.Source != provider.ModelSourceManual && value.Source != provider.ModelSourceOAuth {

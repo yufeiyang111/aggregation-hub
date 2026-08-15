@@ -8,10 +8,10 @@ mod runtime_commands;
 
 use core_process::CoreProcessManager;
 use runtime_commands::{
-    create_local_key, create_provider, dashboard_status, delete_provider, disable_model,
-    disable_provider, enable_model, enable_provider, list_models, runtime_restart, runtime_start,
-    runtime_status, runtime_stop, sync_provider_models, test_provider, update_model_capabilities,
-    update_provider,
+    create_local_key, create_manual_model, create_provider, dashboard_status, delete_manual_model,
+    delete_provider, disable_model, disable_provider, enable_model, enable_provider, list_models,
+    runtime_restart, runtime_start, runtime_status, runtime_stop, sync_provider_models,
+    test_provider, update_model_capabilities, update_model_limits, update_provider,
 };
 use tauri::Manager;
 
@@ -39,6 +39,9 @@ fn run() {
             sync_provider_models,
             list_models,
             update_model_capabilities,
+            update_model_limits,
+            create_manual_model,
+            delete_manual_model,
             enable_model,
             disable_model,
             runtime_start,

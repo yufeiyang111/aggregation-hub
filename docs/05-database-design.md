@@ -85,7 +85,7 @@ erDiagram
 
 ### provider_models
 
-字段：id、provider_id、upstream_model_id、public_model_id、display_name、source、lifecycle_status、enabled、各能力布尔、context_window_tokens、max_output_tokens、capability_source、capability_override_json、version 和时间字段。
+字段：id、provider_id、upstream_model_id、public_model_id、display_name、source、lifecycle_status、enabled、各能力布尔、context_window_tokens、max_output_tokens、context_window_override_tokens、max_output_override_tokens、capability_source、capability_override_json、version 和时间字段。参数覆盖为空时使用上游声明；手工模型使用 `source=manual` 并默认禁用。
 
 约束：public_model_id 全局唯一；provider_id+upstream_model_id 唯一；应用保证公开 ID 前缀等于 Provider slug。
 
@@ -236,6 +236,8 @@ CREATE TABLE provider_models (
   supports_vision INTEGER NOT NULL CHECK (supports_vision IN (0,1)),
   context_window_tokens INTEGER,
   max_output_tokens INTEGER,
+  context_window_override_tokens INTEGER CHECK (context_window_override_tokens IS NULL OR context_window_override_tokens > 0),
+  max_output_override_tokens INTEGER CHECK (max_output_override_tokens IS NULL OR max_output_override_tokens > 0),
   capability_source TEXT NOT NULL,
   capability_override_json TEXT NOT NULL DEFAULT '{}',
   version INTEGER NOT NULL DEFAULT 1,

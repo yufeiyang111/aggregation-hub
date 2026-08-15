@@ -94,6 +94,24 @@ export interface UpdateModelCapabilitiesInput {
   capability_override: ModelCapabilityOverride;
 }
 
+export interface ModelLimitOverride {
+  context_window_tokens?: number;
+  max_output_tokens?: number;
+}
+
+export interface UpdateModelLimitsInput {
+  version: number;
+  limit_override: ModelLimitOverride;
+}
+
+export interface CreateManualModelInput {
+  upstream_model_id: string;
+  display_name: string;
+  capabilities: ModelCapabilities;
+  context_window_tokens?: number;
+  max_output_tokens?: number;
+}
+
 export interface ModelSummary {
   id: string;
   provider_id: string;
@@ -108,6 +126,7 @@ export interface ModelSummary {
   max_output_tokens: number | null;
   capability_source: string;
   capability_override: ModelCapabilityOverride;
+  limit_override: ModelLimitOverride;
   version: number;
 }
 
@@ -146,6 +165,9 @@ export const desktopApi = {
   syncProviderModels: (id: string) => invoke<SyncModelsResult>("sync_provider_models", { id }),
   listModels: (query: ModelListQuery) => invoke<ModelPage>("list_models", { query }),
   updateModelCapabilities: (id: string, input: UpdateModelCapabilitiesInput) => invoke<ModelSummary>("update_model_capabilities", { id, input }),
+  updateModelLimits: (id: string, input: UpdateModelLimitsInput) => invoke<ModelSummary>("update_model_limits", { id, input }),
+  createManualModel: (provider_id: string, input: CreateManualModelInput) => invoke<ModelSummary>("create_manual_model", { provider_id, input }),
+  deleteManualModel: (id: string, version: number) => invoke<void>("delete_manual_model", { id, version }),
   enableModel: (id: string, version: number) => invoke<ModelSummary>("enable_model", { id, version }),
   disableModel: (id: string, version: number) => invoke<ModelSummary>("disable_model", { id, version }),
   createLocalKey: (name: string) => invoke<OneTimeLocalKey>("create_local_key", { name }),

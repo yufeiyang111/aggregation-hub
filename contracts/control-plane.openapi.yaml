@@ -239,6 +239,33 @@ paths:
         '401': { $ref: '#/components/responses/InvalidManagementToken' }
         '404': { $ref: '#/components/responses/ControlPlaneError' }
         '502': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/providers/{providerId}/models:
+    post:
+      operationId: createManualModel
+      summary: 添加一个不依赖上游发现结果的手工模型
+      description: 手工模型默认停用；模型同步不会覆盖手工模型，删除仅允许作用于手工模型。
+      security:
+        - ManagementToken: []
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualModelCreateInput' }
+      responses:
+        '201':
+          description: 已创建的手工模型
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Model' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
   /internal/v1/models:
     get:
       operationId: listModels
@@ -299,6 +326,50 @@ paths:
         '404': { $ref: '#/components/responses/ControlPlaneError' }
         '409': { $ref: '#/components/responses/ControlPlaneError' }
         '500': { $ref: '#/components/responses/ControlPlaneError' }
+    delete:
+      operationId: deleteManualModel
+      summary: 删除手工模型
+      description: 仅允许删除 source=manual 的模型；操作为软删除。
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ModelID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionRequest' }
+      responses:
+        '204': { description: 手工模型已删除 }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+
+  /internal/v1/models/{id}/limits:
+    patch:
+      operationId: updateModelLimits
+      summary: 覆盖模型上下文和最大输出参数
+      description: 空 limit_override 对象代表恢复上游声明；参数覆盖不会改变上游模型能力。
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ModelID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModelLimitUpdateInput' }
+      responses:
+        '200':
+          description: 已更新的模型
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Model' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
   /internal/v1/models/{id}/enable:
     post:
       operationId: enableModel
@@ -534,6 +605,29 @@ components:
         supports_reasoning: { type: boolean }
         supports_thinking: { type: boolean }
         supports_vision: { type: boolean }
+    ModelLimitOverride:
+      type: object
+      additionalProperties: false
+      properties:
+        context_window_tokens: { type: integer, minimum: 1 }
+        max_output_tokens: { type: integer, minimum: 1 }
+    ModelLimitUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [version, limit_override]
+      properties:
+        version: { type: integer, minimum: 1 }
+        limit_override: { $ref: '#/components/schemas/ModelLimitOverride' }
+    ManualModelCreateInput:
+      type: object
+      additionalProperties: false
+      required: [upstream_model_id, display_name, capabilities]
+      properties:
+        upstream_model_id: { type: string, minLength: 1, maxLength: 255 }
+        display_name: { type: string, minLength: 1, maxLength: 255 }
+        capabilities: { $ref: '#/components/schemas/ModelCapabilities' }
+        context_window_tokens: { type: [integer, "null"], minimum: 1 }
+        max_output_tokens: { type: [integer, "null"], minimum: 1 }
     ModelCapabilityUpdateInput:
       type: object
       additionalProperties: false
@@ -544,7 +638,7 @@ components:
     Model:
       type: object
       additionalProperties: false
-      required: [id, provider_id, upstream_model_id, public_model_id, display_name, source, lifecycle_status, enabled, capabilities, capability_source, capability_override, version]
+      required: [id, provider_id, upstream_model_id, public_model_id, display_name, source, lifecycle_status, enabled, capabilities, capability_source, capability_override, limit_override, version]
       properties:
         id: { type: string, minLength: 1, maxLength: 64 }
         provider_id: { type: string, minLength: 1, maxLength: 64 }
@@ -555,10 +649,11 @@ components:
         lifecycle_status: { $ref: '#/components/schemas/ManageableModelStatus' }
         enabled: { type: boolean }
         capabilities: { $ref: '#/components/schemas/ModelCapabilities' }
-        context_window_tokens: { type: integer, minimum: 1 }
-        max_output_tokens: { type: integer, minimum: 1 }
+        context_window_tokens: { type: [integer, "null"], minimum: 1 }
+        max_output_tokens: { type: [integer, "null"], minimum: 1 }
         capability_source: { type: string, minLength: 1, maxLength: 128 }
         capability_override: { $ref: '#/components/schemas/ModelCapabilityOverride' }
+        limit_override: { $ref: '#/components/schemas/ModelLimitOverride' }
         version: { type: integer, minimum: 1 }
     ModelPage:
       type: object

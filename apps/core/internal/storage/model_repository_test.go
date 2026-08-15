@@ -236,3 +236,63 @@ func TestModelRepositoryPersistsCapabilityOverrideAcrossSync(t *testing.T) {
 		t.Fatalf("同步不应清除用户覆盖: %+v, %v", effective, err)
 	}
 }
+
+func TestModelRepositoryCreatesManualModelsAndPersistsLimitOverrides(t *testing.T) {
+	database := openMigratedDatabase(t)
+	providers, err := storage.NewProviderRepository(database)
+	if err != nil {
+		t.Fatalf("创建 Provider 仓储失败: %v", err)
+	}
+	models, err := storage.NewModelRepository(database)
+	if err != nil {
+		t.Fatalf("创建模型仓储失败: %v", err)
+	}
+	value := testProvider("01H00000000000000000000101", "manual", nil)
+	if err := providers.Create(context.Background(), value, testAudit("01H00000000000000000000102", value.ID)); err != nil {
+		t.Fatalf("创建 Provider 失败: %v", err)
+	}
+	contextWindow, maxOutput := int64(128000), int64(8192)
+	created, err := models.CreateManual(context.Background(), provider.CreateManualModelInput{
+		ID:                  "01H00000000000000000000103",
+		ProviderID:          value.ID,
+		UpstreamModelID:     "manual-model",
+		DisplayName:         "手工模型",
+		Capabilities:        provider.Capabilities{Streaming: true, Tools: true},
+		ContextWindowTokens: &contextWindow,
+		MaxOutputTokens:     &maxOutput,
+	}, provider.AuditEvent{ID: "01H00000000000000000000104", EventType: "manual_model_created", EntityType: "model", EntityID: "01H00000000000000000000103", DetailJSON: json.RawMessage(`{"source":"manual"}`), CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatalf("创建手工模型失败: %v", err)
+	}
+	if created.Source != provider.ModelSourceManual || created.Enabled || created.CapabilitySource != "manual" || created.LifecycleStatus != provider.ModelStatusAvailable {
+		t.Fatalf("手工模型默认状态错误: %+v", created)
+	}
+	if created.ContextWindowTokens == nil || *created.ContextWindowTokens != contextWindow || created.MaxOutputTokens == nil || *created.MaxOutputTokens != maxOutput {
+		t.Fatalf("手工模型基础参数错误: %+v", created)
+	}
+	if err := models.ReconcileSyncedModels(context.Background(), value.ID, value.Slug, []provider.SyncedModel{{UpstreamModelID: "manual-model", DisplayName: "上游同名模型", Source: provider.ModelSourceUpstream, Capabilities: provider.Capabilities{Streaming: false}, CapabilitySource: "upstream"}}, time.Now()); err != nil {
+		t.Fatalf("同步同名上游模型失败: %v", err)
+	}
+	preserved, err := models.FindByID(context.Background(), created.ID)
+	if err != nil || preserved.DisplayName != "手工模型" || preserved.Source != provider.ModelSourceManual || preserved.Capabilities.Streaming != created.Capabilities.Streaming {
+		t.Fatalf("同步不应覆盖手工模型: %+v, %v", preserved, err)
+	}
+	overrideContext, overrideOutput := int64(100000), int64(4096)
+	updated, err := models.SetLimitOverride(context.Background(), created.ID, created.Version, provider.ModelLimitOverride{ContextWindowTokens: &overrideContext, MaxOutputTokens: &overrideOutput}, provider.AuditEvent{ID: "01H00000000000000000000105", EventType: "model_limit_override_updated", EntityType: "model", EntityID: created.ID, DetailJSON: json.RawMessage(`{"mode":"custom"}`), CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatalf("保存模型参数覆盖失败: %v", err)
+	}
+	if updated.ContextWindowOverrideTokens == nil || *updated.ContextWindowOverrideTokens != overrideContext || updated.MaxOutputOverrideTokens == nil || *updated.MaxOutputOverrideTokens != overrideOutput || updated.Version != created.Version+1 {
+		t.Fatalf("模型参数覆盖保存错误: %+v", updated)
+	}
+	reset, err := models.SetLimitOverride(context.Background(), created.ID, updated.Version, provider.ModelLimitOverride{}, provider.AuditEvent{ID: "01H00000000000000000000106", EventType: "model_limit_override_reset", EntityType: "model", EntityID: created.ID, DetailJSON: json.RawMessage(`{"mode":"upstream_default"}`), CreatedAt: time.Now()})
+	if err != nil || reset.ContextWindowOverrideTokens != nil || reset.MaxOutputOverrideTokens != nil {
+		t.Fatalf("模型参数覆盖恢复错误: %+v, %v", reset, err)
+	}
+	if err := models.SoftDeleteManual(context.Background(), created.ID, reset.Version, provider.AuditEvent{ID: "01H00000000000000000000107", EventType: "manual_model_deleted", EntityType: "model", EntityID: created.ID, DetailJSON: json.RawMessage(`{}`), CreatedAt: time.Now()}); err != nil {
+		t.Fatalf("删除手工模型失败: %v", err)
+	}
+	if _, err := models.FindByID(context.Background(), created.ID); !errors.Is(err, provider.ErrModelNotFound) {
+		t.Fatalf("删除后的手工模型仍可见: %v", err)
+	}
+}

@@ -197,6 +197,32 @@ pub struct UpdateModelCapabilitiesInput {
     pub capability_override: ModelCapabilityOverride,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelLimitOverride {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateModelLimitsInput {
+    pub version: i64,
+    pub limit_override: ModelLimitOverride,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateManualModelInput {
+    pub upstream_model_id: String,
+    pub display_name: String,
+    pub capabilities: ModelCapabilities,
+    pub context_window_tokens: Option<i64>,
+    pub max_output_tokens: Option<i64>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelSummary {
     pub id: String,
@@ -212,6 +238,7 @@ pub struct ModelSummary {
     pub max_output_tokens: Option<i64>,
     pub capability_source: String,
     pub capability_override: ModelCapabilityOverride,
+    pub limit_override: ModelLimitOverride,
     pub version: i64,
 }
 
@@ -272,6 +299,46 @@ struct VersionRequest {
 struct ModelCapabilitiesUpdateRequest {
     version: i64,
     capability_override: ModelCapabilityOverride,
+}
+
+#[derive(Serialize)]
+struct ModelLimitsUpdateRequest {
+    version: i64,
+    limit_override: ModelLimitOverride,
+}
+
+#[derive(Serialize)]
+struct ManualModelCreateRequest {
+    upstream_model_id: String,
+    display_name: String,
+    capabilities: ModelCapabilities,
+    context_window_tokens: Option<i64>,
+    max_output_tokens: Option<i64>,
+}
+
+fn validate_limit_override(value: &ModelLimitOverride) -> Result<(), String> {
+    for limit in [value.context_window_tokens, value.max_output_tokens] {
+        if let Some(limit) = limit {
+            if limit <= 0 {
+                return Err("模型参数必须是正整数".to_owned());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_manual_model_input(input: &CreateManualModelInput) -> Result<(), String> {
+    if input.upstream_model_id.trim().is_empty()
+        || input.upstream_model_id.trim().len() > 255
+        || input.display_name.trim().is_empty()
+        || input.display_name.trim().len() > 255
+    {
+        return Err("手工模型标识或名称无效".to_owned());
+    }
+    validate_limit_override(&ModelLimitOverride {
+        context_window_tokens: input.context_window_tokens,
+        max_output_tokens: input.max_output_tokens,
+    })
 }
 
 pub(crate) fn validate_create_provider(input: &CreateProviderInput) -> Result<(), String> {
@@ -657,6 +724,99 @@ impl CoreProcessManager {
                 version: input.version,
                 capability_override: input.capability_override,
             },
+        )
+    }
+
+    pub fn update_model_limits(
+        &self,
+        id: String,
+        input: UpdateModelLimitsInput,
+    ) -> Result<ModelSummary, String> {
+        if !valid_model_id(&id) || input.version < 1 {
+            return Err("模型标识或版本无效".to_owned());
+        }
+        validate_limit_override(&input.limit_override)?;
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        let path = format!("/internal/v1/models/{id}/limits");
+        control_client::patch_json(
+            &ready.control_url,
+            token.as_str(),
+            &path,
+            &ModelLimitsUpdateRequest {
+                version: input.version,
+                limit_override: input.limit_override,
+            },
+        )
+    }
+
+    pub fn create_manual_model(
+        &self,
+        provider_id: String,
+        input: CreateManualModelInput,
+    ) -> Result<ModelSummary, String> {
+        if !valid_model_id(&provider_id) {
+            return Err("服务标识无效".to_owned());
+        }
+        validate_manual_model_input(&input)?;
+        let request = ManualModelCreateRequest {
+            upstream_model_id: input.upstream_model_id.trim().to_owned(),
+            display_name: input.display_name.trim().to_owned(),
+            capabilities: input.capabilities,
+            context_window_tokens: input.context_window_tokens,
+            max_output_tokens: input.max_output_tokens,
+        };
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        let path = format!("/internal/v1/providers/{provider_id}/models");
+        control_client::post_json(&ready.control_url, token.as_str(), &path, &request)
+    }
+
+    pub fn delete_manual_model(&self, id: String, version: i64) -> Result<(), String> {
+        if !valid_model_id(&id) || version < 1 {
+            return Err("模型标识或版本无效".to_owned());
+        }
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        let path = format!("/internal/v1/models/{id}");
+        control_client::delete_json(
+            &ready.control_url,
+            token.as_str(),
+            &path,
+            &VersionRequest { version },
         )
     }
 

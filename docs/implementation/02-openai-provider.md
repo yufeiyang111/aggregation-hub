@@ -150,7 +150,7 @@ Expected PASS。Suggested commit: `feat(adapter): proxy OpenAI chat streams and 
 - [ ] Write ProviderWizard tests: required fields、invalid slug/base URL、duplicate submit blocked、masked credential not resubmitted、test failure actionable。
 - [ ] Implement wizard steps and model selection；new synced models default disabled。
 - [x] Implement list loading/empty/error/success、filter、pagination、enable confirmations。
-当前进度：Core 已实现同步模型默认禁用、模型控制面列表/筛选/分页以及乐观锁启用/禁用；Data Plane `GET /v1/models` 仅暴露 Provider 与模型均可路由的已启用模型。桌面端已通过受限 Tauri Commands 提供 OpenAI 兼容服务创建、编辑、测试、同步、服务启停、删除确认和模型启停；编辑请求只允许固定 Provider 路径、乐观锁版本和 allowlist 后的 Adapter 配置，密钥字段为空时保留既有凭据，填写新值时才替换，完整值不回显到列表或浏览器存储。凭据轮换/撤销、模型能力覆盖和真实客户端联调仍未实现。
+当前进度：Core 已实现同步模型默认禁用、模型控制面列表/筛选/分页、乐观锁启用/禁用、能力覆盖、手工模型创建、模型参数覆盖和手工模型软删除；Data Plane `GET /v1/models` 仅暴露 Provider 与模型均可路由的已启用模型。桌面端已通过受限 Tauri Commands 提供 OpenAI 兼容服务创建、编辑、测试、同步、服务启停、删除确认、模型启停、能力编辑、参数编辑和手工模型管理；编辑请求只允许固定 Provider/Model 路径、乐观锁版本和 allowlist 后的配置，密钥字段为空时保留既有凭据，填写新值时才替换，完整值不回显到列表或浏览器存储。凭据轮换/撤销和真实客户端联调仍未实现。
 
 - [ ] Run:
 
@@ -204,6 +204,13 @@ Suggested commit: `test: add OpenAI-compatible end-to-end coverage`。
 - [x] SQLite 仓储以事务保存覆盖与审计事件；下一次上游模型同步保留覆盖，目录和 Router 使用有效能力。
 - [x] 桌面端通过显式 `update_model_capabilities` Tauri Command 提供能力编辑和“恢复上游声明”；WebView 不接触管理令牌或原始数据库 JSON。
 - [x] L1 验证：Provider/SQLite/Control Plane 单测、Rust 单测、React 交互测试；未进行真实 Provider、Claude Code 或 Codex 验证。
+
+### 补充进度：手工模型与参数覆盖
+
+- [x] `POST /internal/v1/providers/{providerId}/models` 创建手工模型，默认停用且不被上游同步覆盖。
+- [x] `PATCH /internal/v1/models/{id}/limits` 保存上下文长度/最大输出覆盖，空对象恢复上游声明；`DELETE` 仅允许软删除手工模型。
+- [x] 新增 SQLite 迁移保存两个参数覆盖列；Core、Tauri 和桌面模型页均使用 typed DTO，不暴露原始数据库 JSON。
+- [x] L1 验证覆盖参数解析边界、仓储持久化/同步保护、服务乐观锁、Control Plane 路由、Rust 编译/单测和 React 交互测试；未进行真实 Provider、Claude Code 或 Codex 验证。
 
 ## Phase 2 Gate
 

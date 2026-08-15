@@ -45,6 +45,20 @@ func (override CapabilityOverride) JSON() (json.RawMessage, error) {
 
 // ParseCapabilityOverride 校验并解析数据库或 Control Plane 使用的能力覆盖对象。
 func ParseCapabilityOverride(raw json.RawMessage) (CapabilityOverride, error) {
+	return parseCapabilityOverride(raw)
+}
+
+// UnmarshalJSON 在 Control Plane 边界拒绝 null、重复字段和未知字段。
+func (override *CapabilityOverride) UnmarshalJSON(raw []byte) error {
+	parsed, err := parseCapabilityOverride(raw)
+	if err != nil {
+		return err
+	}
+	*override = parsed
+	return nil
+}
+
+func parseCapabilityOverride(raw json.RawMessage) (CapabilityOverride, error) {
 	if len(raw) == 0 {
 		return CapabilityOverride{}, nil
 	}

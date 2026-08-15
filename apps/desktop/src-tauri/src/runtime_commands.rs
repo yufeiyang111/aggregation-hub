@@ -1,9 +1,9 @@
 use tauri::{AppHandle, State};
 
 use crate::core_process::{
-    CoreProcessManager, CreateProviderInput, DashboardSnapshot, ModelListQuery, ModelPage,
-    ModelSummary, OneTimeLocalKey, ProviderSummary, ProviderTestResult, RuntimeSnapshot,
-    SyncModelsResult, UpdateProviderInput,
+    CoreProcessManager, CreateManualModelInput, CreateProviderInput, DashboardSnapshot,
+    ModelListQuery, ModelPage, ModelSummary, OneTimeLocalKey, ProviderSummary, ProviderTestResult,
+    RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput, UpdateProviderInput,
 };
 
 #[tauri::command]
@@ -137,6 +137,42 @@ pub async fn update_model_capabilities(
     tauri::async_runtime::spawn_blocking(move || manager.update_model_capabilities(id, input))
         .await
         .map_err(|_| "更新模型能力失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn update_model_limits(
+    id: String,
+    input: UpdateModelLimitsInput,
+    state: State<'_, CoreProcessManager>,
+) -> Result<ModelSummary, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.update_model_limits(id, input))
+        .await
+        .map_err(|_| "更新模型参数失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn create_manual_model(
+    provider_id: String,
+    input: CreateManualModelInput,
+    state: State<'_, CoreProcessManager>,
+) -> Result<ModelSummary, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.create_manual_model(provider_id, input))
+        .await
+        .map_err(|_| "创建手工模型失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn delete_manual_model(
+    id: String,
+    version: i64,
+    state: State<'_, CoreProcessManager>,
+) -> Result<(), String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.delete_manual_model(id, version))
+        .await
+        .map_err(|_| "删除手工模型失败".to_owned())?
 }
 
 #[tauri::command]

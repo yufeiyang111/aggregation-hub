@@ -33,6 +33,15 @@ func openMigratedDatabase(t *testing.T) *sql.DB {
 	return database
 }
 
+func mustReadMigration(t *testing.T, name string) []byte {
+	t.Helper()
+	value, err := fs.ReadFile(migrations.FS, name)
+	if err != nil {
+		t.Fatalf("读取迁移文件 %s 失败: %v", name, err)
+	}
+	return value
+}
+
 func TestMigrateCreatesInitialSchemaAndEnforcesForeignKeys(t *testing.T) {
 	database := openMigratedDatabase(t)
 
@@ -107,16 +116,13 @@ func TestMigrateRejectsChecksumDrift(t *testing.T) {
 func TestMigrateRollsBackFailedMigrationWithoutResettingDatabase(t *testing.T) {
 	database := openMigratedDatabase(t)
 
-	initialMigration, err := fs.ReadFile(migrations.FS, "0001_initial.sql")
-	if err != nil {
-		t.Fatalf("读取嵌入的初始迁移失败: %v", err)
-	}
 	brokenMigrations := fstest.MapFS{
-		"0001_initial.sql": &fstest.MapFile{Data: initialMigration},
-		"0002_broken.sql":  &fstest.MapFile{Data: []byte("CREATE TABLE broken (id INTEGER;\n")},
+		"0001_initial.sql":               &fstest.MapFile{Data: mustReadMigration(t, "0001_initial.sql")},
+		"0002_model_limit_overrides.sql": &fstest.MapFile{Data: mustReadMigration(t, "0002_model_limit_overrides.sql")},
+		"0003_broken.sql":                &fstest.MapFile{Data: []byte("CREATE TABLE broken (id INTEGER;\n")},
 	}
 
-	err = storage.Migrate(context.Background(), database, brokenMigrations)
+	err := storage.Migrate(context.Background(), database, brokenMigrations)
 	if err == nil {
 		t.Fatal("非法迁移不应被接受")
 	}
@@ -125,7 +131,7 @@ func TestMigrateRollsBackFailedMigrationWithoutResettingDatabase(t *testing.T) {
 	if err := database.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("查询迁移记录失败: %v", err)
 	}
-	if migrationCount != 1 {
+	if migrationCount != 2 {
 		t.Fatalf("失败迁移不得写入记录，实际记录数=%d", migrationCount)
 	}
 

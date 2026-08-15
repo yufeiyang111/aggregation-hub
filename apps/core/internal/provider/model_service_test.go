@@ -72,3 +72,47 @@ func TestModelServiceSetsStateWithOptimisticVersionAndSafeDTO(t *testing.T) {
 		t.Fatalf("模型能力恢复审计详情错误=%q, %v", detail, err)
 	}
 }
+
+func TestModelServiceCreatesManualModelAndUpdatesLimits(t *testing.T) {
+	database, _, _, providerService := openProviderService(t)
+	createdProvider, err := providerService.Create(context.Background(), provider.CreateProviderInput{
+		Slug:              "manual-service",
+		Name:              "手工模型服务测试",
+		AdapterType:       "openai-compatible",
+		AuthType:          provider.AuthTypeNone,
+		BaseURL:           "https://example.test/v1",
+		Timeout:           30 * time.Second,
+		AdapterConfigJSON: json.RawMessage(`{"wire_api":"chat_completions"}`),
+	})
+	if err != nil {
+		t.Fatalf("创建 Provider 失败: %v", err)
+	}
+	models, err := storage.NewModelRepository(database)
+	if err != nil {
+		t.Fatalf("创建模型仓储失败: %v", err)
+	}
+	ids := &idSequence{values: []string{"01H00000000000000000000301", "01H00000000000000000000302", "01H00000000000000000000303", "01H00000000000000000000304"}}
+	modelService, err := provider.NewModelService(models, provider.ModelServiceOptions{Now: func() time.Time { return time.UnixMilli(1_700_000_040_000).UTC() }, NewID: ids.next})
+	if err != nil {
+		t.Fatalf("创建模型服务失败: %v", err)
+	}
+	contextWindow, maxOutput := int64(128000), int64(8192)
+	manual, err := modelService.CreateManual(context.Background(), provider.CreateManualModelInput{ProviderID: createdProvider.ID, UpstreamModelID: "manual-service-model", DisplayName: "手工服务模型", Capabilities: provider.Capabilities{Streaming: true, Tools: true}, ContextWindowTokens: &contextWindow, MaxOutputTokens: &maxOutput})
+	if err != nil {
+		t.Fatalf("创建手工模型失败: %v", err)
+	}
+	if manual.Source != provider.ModelSourceManual || manual.Enabled || manual.PublicModelID != "manual-service/manual-service-model" || manual.ContextWindowTokens == nil || *manual.ContextWindowTokens != contextWindow {
+		t.Fatalf("手工模型 DTO 错误: %+v", manual)
+	}
+	overrideContext, overrideOutput := int64(100000), int64(4096)
+	updated, err := modelService.UpdateLimits(context.Background(), manual.ID, provider.UpdateModelLimitsInput{ExpectedVersion: manual.Version, LimitOverride: provider.ModelLimitOverride{ContextWindowTokens: &overrideContext, MaxOutputTokens: &overrideOutput}})
+	if err != nil || updated.ContextWindowTokens == nil || *updated.ContextWindowTokens != overrideContext || updated.MaxOutputTokens == nil || *updated.MaxOutputTokens != overrideOutput || updated.LimitOverride.ContextWindowTokens == nil {
+		t.Fatalf("模型参数 DTO 错误: %+v, %v", updated, err)
+	}
+	if err := modelService.DeleteManual(context.Background(), manual.ID, updated.Version); err != nil {
+		t.Fatalf("删除手工模型失败: %v", err)
+	}
+	if _, err := models.FindByID(context.Background(), manual.ID); !errors.Is(err, provider.ErrModelNotFound) {
+		t.Fatalf("删除后的模型仍可查询: %v", err)
+	}
+}

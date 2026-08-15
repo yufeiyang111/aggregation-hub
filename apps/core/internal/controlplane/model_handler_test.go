@@ -31,6 +31,12 @@ type recordingModelService struct {
 	disableVersion int64
 	updateID       string
 	updateInput    provider.UpdateModelCapabilitiesInput
+	limitsID       string
+	limitsInput    provider.UpdateModelLimitsInput
+	createProvider string
+	createInput    provider.CreateManualModelInput
+	deleteID       string
+	deleteVersion  int64
 	result         provider.ModelDTO
 	err            error
 }
@@ -51,6 +57,24 @@ func (service *recordingModelService) UpdateCapabilities(_ context.Context, id s
 	service.updateID = id
 	service.updateInput = input
 	return service.result, service.err
+}
+
+func (service *recordingModelService) UpdateLimits(_ context.Context, id string, input provider.UpdateModelLimitsInput) (provider.ModelDTO, error) {
+	service.limitsID = id
+	service.limitsInput = input
+	return service.result, service.err
+}
+
+func (service *recordingModelService) CreateManual(_ context.Context, input provider.CreateManualModelInput) (provider.ModelDTO, error) {
+	service.createProvider = input.ProviderID
+	service.createInput = input
+	return service.result, service.err
+}
+
+func (service *recordingModelService) DeleteManual(_ context.Context, id string, version int64) error {
+	service.deleteID = id
+	service.deleteVersion = version
+	return service.err
 }
 
 func TestControlPlaneModelRoutesValidateAuthQueryAndVersion(t *testing.T) {
@@ -144,5 +168,41 @@ func TestControlPlaneModelRoutesReturnSafeMappedErrors(t *testing.T) {
 	server.Handler().ServeHTTP(enableResponse, enable)
 	if enableResponse.Code != http.StatusNotFound || !bytes.Contains(enableResponse.Body.Bytes(), []byte("model_not_found")) {
 		t.Fatalf("模型不存在错误映射错误: status=%d body=%s", enableResponse.Code, enableResponse.Body.String())
+	}
+}
+
+func TestControlPlaneManualModelAndLimitRoutes(t *testing.T) {
+	service := &recordingModelService{result: provider.ModelDTO{ID: "01H00000000000000000000401", Version: 4}}
+	server, err := controlplane.NewServer(controlplane.Options{ManagementToken: testManagementToken, Runtime: func() controlplane.RuntimeStatus { return controlplane.RuntimeStatus{} }, Shutdown: func(context.Context) error { return nil }, ModelReader: &recordingModelReader{}, ModelService: service})
+	if err != nil {
+		t.Fatalf("创建 Control Plane 失败: %v", err)
+	}
+	create := httptest.NewRequest(http.MethodPost, "/internal/v1/providers/01H00000000000000000000400/models", bytes.NewBufferString(`{"upstream_model_id":"manual","display_name":"手工","capabilities":{"streaming":true,"tools":false,"parallel_tools":false,"reasoning":false,"thinking":false,"vision":false},"context_window_tokens":128000}`))
+	create.Header.Set(controlplane.ManagementTokenHeader, testManagementToken)
+	createResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(createResponse, create)
+	if createResponse.Code != http.StatusCreated || service.createProvider != "01H00000000000000000000400" || service.createInput.UpstreamModelID != "manual" || !service.createInput.Capabilities.Streaming {
+		t.Fatalf("手工模型创建路由错误: status=%d provider=%q input=%+v", createResponse.Code, service.createProvider, service.createInput)
+	}
+	invalidCreate := httptest.NewRequest(http.MethodPost, "/internal/v1/providers/provider/models", bytes.NewBufferString(`{"upstream_model_id":"manual","display_name":"手工","capabilities":{"streaming":true}}`))
+	invalidCreate.Header.Set(controlplane.ManagementTokenHeader, testManagementToken)
+	invalidCreateResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(invalidCreateResponse, invalidCreate)
+	if invalidCreateResponse.Code != http.StatusBadRequest {
+		t.Fatalf("缺少能力字段不应创建: status=%d", invalidCreateResponse.Code)
+	}
+	limits := httptest.NewRequest(http.MethodPatch, "/internal/v1/models/01H00000000000000000000401/limits", bytes.NewBufferString(`{"version":3,"limit_override":{"context_window_tokens":100000,"max_output_tokens":4096}}`))
+	limits.Header.Set(controlplane.ManagementTokenHeader, testManagementToken)
+	limitsResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(limitsResponse, limits)
+	if limitsResponse.Code != http.StatusOK || service.limitsID == "" || service.limitsInput.ExpectedVersion != 3 || service.limitsInput.LimitOverride.ContextWindowTokens == nil || *service.limitsInput.LimitOverride.ContextWindowTokens != 100000 {
+		t.Fatalf("模型参数路由错误: status=%d input=%+v", limitsResponse.Code, service.limitsInput)
+	}
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/internal/v1/models/01H00000000000000000000401", bytes.NewBufferString(`{"version":4}`))
+	deleteRequest.Header.Set(controlplane.ManagementTokenHeader, testManagementToken)
+	deleteResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(deleteResponse, deleteRequest)
+	if deleteResponse.Code != http.StatusNoContent || service.deleteID == "" || service.deleteVersion != 4 {
+		t.Fatalf("手工模型删除路由错误: status=%d id=%q version=%d", deleteResponse.Code, service.deleteID, service.deleteVersion)
 	}
 }

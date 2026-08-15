@@ -1,5 +1,5 @@
 import { type ChangeEvent, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { desktopApi, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
+import { desktopApi, type CreateManualModelInput, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelLimitOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
 
 type PageID = "services" | "models" | "clients" | "logs" | "settings";
 type CopyState = "idle" | "copied" | "failed";
@@ -67,6 +67,7 @@ function capabilityOverrideFromValues(values: ModelCapabilityValues): ModelCapab
   }, {});
 }
 type PendingModelChange = { model: ModelSummary; enabled: boolean };
+type PendingModelDelete = { model: ModelSummary };
 type PendingProviderChange = { provider: ProviderSummary; enabled: boolean };
 type PendingProviderDelete = { provider: ProviderSummary };
 type ProviderFeedback = { providerID: string; message: string; success: boolean } | null;
@@ -354,17 +355,15 @@ function ClientConfigPage({
   );
 }
 
-function ModelRow({ model, actionPending, onRequestChange, onRequestEdit }: { model: ModelSummary; actionPending: boolean; onRequestChange: (model: ModelSummary, enabled: boolean) => void; onRequestEdit: (model: ModelSummary) => void }) {
+function ModelRow({ model, actionPending, onRequestChange, onRequestEdit, onRequestEditLimits, onRequestDelete }: { model: ModelSummary; actionPending: boolean; onRequestChange: (model: ModelSummary, enabled: boolean) => void; onRequestEdit: (model: ModelSummary) => void; onRequestEditLimits: (model: ModelSummary) => void; onRequestDelete: (model: ModelSummary) => void }) {
   const capabilityLabels = (Object.keys(modelCapabilityLabels) as ModelCapability[])
     .filter((capability) => model.capabilities[capability])
     .map((capability) => modelCapabilityLabels[capability]);
 
-  const handleToggle = useCallback(() => {
-    onRequestChange(model, !model.enabled);
-  }, [model, onRequestChange]);
-  const handleEdit = useCallback(() => {
-    onRequestEdit(model);
-  }, [model, onRequestEdit]);
+  const handleToggle = useCallback(() => onRequestChange(model, !model.enabled), [model, onRequestChange]);
+  const handleEdit = useCallback(() => onRequestEdit(model), [model, onRequestEdit]);
+  const handleEditLimits = useCallback(() => onRequestEditLimits(model), [model, onRequestEditLimits]);
+  const handleDelete = useCallback(() => onRequestDelete(model), [model, onRequestDelete]);
 
   return (
     <li className="model-row">
@@ -375,6 +374,7 @@ function ModelRow({ model, actionPending, onRequestChange, onRequestEdit }: { mo
         <div className="model-tags" aria-label="模型能力">
           <span className={model.enabled ? "service-state is-enabled" : "service-state"}>{model.enabled ? "已启用" : "未启用"}</span>
           <span className="service-state">{modelStatusLabels[model.lifecycle_status]}</span>
+          {model.source === "manual" ? <span className="model-capability">手工</span> : null}
           {capabilityLabels.map((label) => <span key={label} className="model-capability">{label}</span>)}
         </div>
       </div>
@@ -382,6 +382,8 @@ function ModelRow({ model, actionPending, onRequestChange, onRequestEdit }: { mo
         <span>{model.upstream_model_id}</span>
         <div className="model-actions">
           <button type="button" className="button button-secondary" onClick={handleEdit} disabled={actionPending}>能力</button>
+          <button type="button" className="button button-secondary" onClick={handleEditLimits} disabled={actionPending}>参数</button>
+          {model.source === "manual" ? <button type="button" className="button button-danger" onClick={handleDelete} disabled={actionPending}>删除</button> : null}
           <button type="button" className={model.enabled ? "button button-secondary" : "button button-primary"} onClick={handleToggle} disabled={actionPending || (model.lifecycle_status !== "available" && model.lifecycle_status !== "degraded" && !model.enabled)}>
             {actionPending ? "正在更新" : model.enabled ? "停用" : "启用"}
           </button>
@@ -407,6 +409,10 @@ function ModelPage({
   onRefresh,
   onRequestChange,
   onRequestEdit,
+  onRequestEditLimits,
+  onRequestDelete,
+  onCreateManual,
+  providers,
 }: {
   runtime: RuntimeSnapshot | undefined;
   page: ModelPageData | null;
@@ -423,6 +429,10 @@ function ModelPage({
   onRefresh: () => void;
   onRequestChange: (model: ModelSummary, enabled: boolean) => void;
   onRequestEdit: (model: ModelSummary) => void;
+  onRequestEditLimits: (model: ModelSummary) => void;
+  onRequestDelete: (model: ModelSummary) => void;
+  onCreateManual: () => void;
+  providers: ProviderSummary[];
 }) {
   const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -443,7 +453,10 @@ function ModelPage({
           <h1 id="models-title">模型</h1>
           <p>从已同步的服务中选择可以暴露给本地网关的模型。</p>
         </div>
-        <button type="button" className="button button-secondary" onClick={onRefresh} disabled={loading}>刷新</button>
+        <div className="button-group">
+          <button type="button" className="button button-secondary" onClick={onRefresh} disabled={loading}>刷新</button>
+          <button type="button" className="button button-primary" onClick={onCreateManual} disabled={loading || providers.length === 0}>手工添加</button>
+        </div>
       </div>
       <form className="model-filter" aria-label="模型筛选" onSubmit={handleSubmit}>
         <label>
@@ -472,7 +485,7 @@ function ModelPage({
       {page && page.data.length > 0 ? (
         <>
           <ul className="model-list" aria-label="已同步模型">
-            {page.data.map((model) => <ModelRow key={model.id} model={model} actionPending={actionPendingID === model.id} onRequestChange={onRequestChange} onRequestEdit={onRequestEdit} />)}
+            {page.data.map((model) => <ModelRow key={model.id} model={model} actionPending={actionPendingID === model.id} onRequestChange={onRequestChange} onRequestEdit={onRequestEdit} onRequestEditLimits={onRequestEditLimits} onRequestDelete={onRequestDelete} />)}
           </ul>
           {page.next_cursor ? <div className="model-pagination"><button type="button" className="button button-secondary" onClick={onNextPage} disabled={loading || actionPendingID !== null}>下一页</button></div> : null}
         </>
@@ -533,6 +546,123 @@ function EditModelCapabilitiesDialog({ model, pending, onClose, onUpdate }: { mo
       </section>
     </div>
   );
+}
+
+function parseOptionalPositiveLimit(value: string): number | undefined | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function EditModelLimitsDialog({ model, pending, onClose, onUpdate }: { model: ModelSummary | null; pending: boolean; onClose: () => void; onUpdate: (model: ModelSummary, limitOverride: ModelLimitOverride) => void }) {
+  const [contextWindow, setContextWindow] = useState("");
+  const [maxOutput, setMaxOutput] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setContextWindow(model?.limit_override.context_window_tokens?.toString() ?? "");
+    setMaxOutput(model?.limit_override.max_output_tokens?.toString() ?? "");
+    setFormError(null);
+  }, [model]);
+
+  const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!model) return;
+    const contextValue = parseOptionalPositiveLimit(contextWindow);
+    const outputValue = parseOptionalPositiveLimit(maxOutput);
+    if (contextValue === null || outputValue === null) {
+      setFormError("参数必须是正整数；留空即可恢复上游声明。");
+      return;
+    }
+    onUpdate(model, {
+      ...(contextValue === undefined ? {} : { context_window_tokens: contextValue }),
+      ...(outputValue === undefined ? {} : { max_output_tokens: outputValue }),
+    });
+  }, [contextWindow, maxOutput, model, onUpdate]);
+
+  if (!model) return null;
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="model-limits-title">
+        <h2 id="model-limits-title">模型参数</h2>
+        <p>仅覆盖本地目录中展示的上下文和最大输出限制；留空会恢复上游声明。</p>
+        <code>{model.public_model_id}</code>
+        <form onSubmit={handleSubmit}>
+          <label className="form-field"><span>上下文长度</span><input className="text-input" inputMode="numeric" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder={model.context_window_tokens?.toString() ?? "未声明"} disabled={pending} /></label>
+          <label className="form-field"><span>最大输出</span><input className="text-input" inputMode="numeric" value={maxOutput} onChange={(event) => setMaxOutput(event.target.value)} placeholder={model.max_output_tokens?.toString() ?? "未声明"} disabled={pending} /></label>
+          {formError ? <p className="form-error" role="alert">{formError}</p> : null}
+          <div className="button-group">
+            <button type="button" className="button button-secondary" onClick={onClose} disabled={pending}>取消</button>
+            <button type="submit" className="button button-primary" disabled={pending} autoFocus>{pending ? "正在保存" : "保存参数"}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ManualModelDialog({ providers, pending, onClose, onCreate }: { providers: ProviderSummary[]; pending: boolean; onClose: () => void; onCreate: (providerID: string, input: CreateManualModelInput) => void }) {
+  const [providerID, setProviderID] = useState(providers[0]?.id ?? "");
+  const [upstreamModelID, setUpstreamModelID] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [values, setValues] = useState<ModelCapabilityValues>({ streaming: true, tools: false, parallel_tools: false, reasoning: false, thinking: false, vision: false });
+  const [contextWindow, setContextWindow] = useState("");
+  const [maxOutput, setMaxOutput] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!providers.some((provider) => provider.id === providerID)) setProviderID(providers[0]?.id ?? "");
+  }, [providerID, providers]);
+
+  const handleToggle = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const capability = event.currentTarget.name as ModelCapability;
+    setValues((current) => ({ ...current, [capability]: event.currentTarget.checked }));
+  }, []);
+  const handleSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const contextValue = parseOptionalPositiveLimit(contextWindow);
+    const outputValue = parseOptionalPositiveLimit(maxOutput);
+    if (!providerID || upstreamModelID.trim() === "" || displayName.trim() === "") {
+      setFormError("请选择服务，并填写模型标识和显示名称。");
+      return;
+    }
+    if (contextValue === null || outputValue === null) {
+      setFormError("参数必须是正整数，或保持留空。");
+      return;
+    }
+    onCreate(providerID, {
+      upstream_model_id: upstreamModelID.trim(),
+      display_name: displayName.trim(),
+      capabilities: values,
+      ...(contextValue === undefined ? {} : { context_window_tokens: contextValue }),
+      ...(outputValue === undefined ? {} : { max_output_tokens: outputValue }),
+    });
+  }, [contextWindow, displayName, maxOutput, onCreate, providerID, upstreamModelID, values]);
+
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section className="confirm-dialog model-capability-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-model-title">
+        <h2 id="manual-model-title">手工添加模型</h2>
+        <p>适合上游没有模型发现接口，或需要补充目录中未返回的模型。</p>
+        <form onSubmit={handleSubmit}>
+          <label className="form-field"><span>服务</span><select className="text-input" value={providerID} onChange={(event) => setProviderID(event.target.value)} disabled={pending}>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+          <label className="form-field"><span>上游模型标识</span><input className="text-input" value={upstreamModelID} onChange={(event) => setUpstreamModelID(event.target.value)} maxLength={255} placeholder="例如 gpt-4.1" disabled={pending} /></label>
+          <label className="form-field"><span>显示名称</span><input className="text-input" value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={255} placeholder="例如 GPT-4.1" disabled={pending} /></label>
+          <fieldset className="capability-settings" disabled={pending}><legend>能力</legend>{(Object.keys(modelCapabilityLabels) as ModelCapability[]).map((capability) => <label key={capability} className="capability-setting"><input name={capability} type="checkbox" checked={values[capability]} onChange={handleToggle} /><span>{modelCapabilityLabels[capability]}</span></label>)}</fieldset>
+          <label className="form-field"><span>上下文长度（可选）</span><input className="text-input" inputMode="numeric" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder="例如 128000" disabled={pending} /></label>
+          <label className="form-field"><span>最大输出（可选）</span><input className="text-input" inputMode="numeric" value={maxOutput} onChange={(event) => setMaxOutput(event.target.value)} placeholder="例如 8192" disabled={pending} /></label>
+          {formError ? <p className="form-error" role="alert">{formError}</p> : null}
+          <div className="button-group"><button type="button" className="button button-secondary" onClick={onClose} disabled={pending}>取消</button><button type="submit" className="button button-primary" disabled={pending} autoFocus>{pending ? "正在创建" : "创建模型"}</button></div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ModelDeleteDialog({ change, pending, onConfirm, onCancel }: { change: PendingModelDelete | null; pending: boolean; onConfirm: () => void; onCancel: () => void }) {
+  if (!change) return null;
+  return <div className="dialog-backdrop" role="presentation"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="model-delete-title"><h2 id="model-delete-title">删除手工模型</h2><p>仅从本地模型目录移除，不会修改上游服务或账号。</p><code>{change.model.public_model_id}</code><div className="button-group"><button type="button" className="button button-secondary" onClick={onCancel} disabled={pending}>取消</button><button type="button" className="button button-danger" onClick={onConfirm} disabled={pending} autoFocus>{pending ? "正在删除" : "确认删除"}</button></div></section></div>;
 }
 
 function ModelChangeDialog({ change, pending, onConfirm, onCancel }: { change: PendingModelChange | null; pending: boolean; onConfirm: () => void; onCancel: () => void }) {
@@ -616,7 +746,10 @@ export function App() {
   const [modelLoading, setModelLoading] = useState(false);
   const [modelActionPendingID, setModelActionPendingID] = useState<string | null>(null);
   const [pendingModelChange, setPendingModelChange] = useState<PendingModelChange | null>(null);
+  const [pendingModelDelete, setPendingModelDelete] = useState<PendingModelDelete | null>(null);
   const [editingModel, setEditingModel] = useState<ModelSummary | null>(null);
+  const [editingModelLimits, setEditingModelLimits] = useState<ModelSummary | null>(null);
+  const [manualModelCreateOpen, setManualModelCreateOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [modelEnabledFilter, setModelEnabledFilter] = useState<ModelEnabledFilter>("all");
   const [modelCapabilityFilter, setModelCapabilityFilter] = useState<"" | ModelCapability>("");
@@ -955,6 +1088,54 @@ export function App() {
     }
   }, [loadModels, modelQuery]);
 
+  const handleUpdateModelLimits = useCallback(async (model: ModelSummary, limitOverride: ModelLimitOverride) => {
+    setModelActionPendingID(model.id);
+    try {
+      await desktopApi.updateModelLimits(model.id, { version: model.version, limit_override: limitOverride });
+      setEditingModelLimits(null);
+      await loadModels(modelQuery);
+      setError(null);
+    } catch (reason) {
+      setError(safeMessage(reason, "更新模型参数失败"));
+    } finally {
+      setModelActionPendingID(null);
+    }
+  }, [loadModels, modelQuery]);
+
+  const handleCreateManualModel = useCallback(async (providerID: string, input: CreateManualModelInput) => {
+    setModelActionPendingID("manual-create");
+    try {
+      await desktopApi.createManualModel(providerID, input);
+      setManualModelCreateOpen(false);
+      await loadModels(modelQuery);
+      setError(null);
+    } catch (reason) {
+      setError(safeMessage(reason, "创建手工模型失败"));
+    } finally {
+      setModelActionPendingID(null);
+    }
+  }, [loadModels, modelQuery]);
+
+  const handleConfirmModelDelete = useCallback(async () => {
+    const model = pendingModelDelete?.model;
+    if (!model) return;
+    setModelActionPendingID(model.id);
+    try {
+      await desktopApi.deleteManualModel(model.id, model.version);
+      setPendingModelDelete(null);
+      await loadModels(modelQuery);
+      setError(null);
+    } catch (reason) {
+      setError(safeMessage(reason, "删除手工模型失败"));
+    } finally {
+      setModelActionPendingID(null);
+    }
+  }, [loadModels, modelQuery, pendingModelDelete]);
+
+  const handleCancelModelDelete = useCallback(() => {
+    if (modelActionPendingID === null) setPendingModelDelete(null);
+  }, [modelActionPendingID]);
+
   const copyText = useCallback(async (value: string, updateState: (state: CopyState) => void) => {
     if (!navigator.clipboard) {
       updateState("failed");
@@ -981,7 +1162,7 @@ export function App() {
   const renderPage = () => {
     if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestEdit={setEditingProvider} onRequestDelete={handleRequestProviderDelete} />;
     if (activePage === "models") {
-      return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} onRequestEdit={setEditingModel} />;
+      return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} onRequestEdit={setEditingModel} onRequestEditLimits={setEditingModelLimits} onRequestDelete={(model) => setPendingModelDelete({ model })} onCreateManual={() => setManualModelCreateOpen(true)} providers={dashboard?.providers ?? []} />;
     }
     if (activePage === "clients") {
       return <ClientConfigPage runtime={runtime} actionPending={actionPending} keyName={keyName} oneTimeKey={oneTimeKey} copyState={copyState} addressCopyState={addressCopyState} onKeyNameChange={setKeyName} onCreateKey={handleCreateKey} onCopyKey={handleCopyKey} onCopyAddress={handleCopyAddress} />;
@@ -1042,6 +1223,9 @@ export function App() {
       <ProviderChangeDialog change={pendingProviderChange} pending={providerActionPendingID !== null} onConfirm={handleConfirmProviderChange} onCancel={handleCancelProviderChange} />
       <ProviderDeleteDialog provider={pendingProviderDelete?.provider ?? null} pending={providerActionPendingID !== null} onConfirm={handleConfirmProviderDelete} onCancel={handleCancelProviderDelete} />
       <EditModelCapabilitiesDialog model={editingModel} pending={modelActionPendingID === editingModel?.id} onClose={() => setEditingModel(null)} onUpdate={handleUpdateModelCapabilities} />
+      <EditModelLimitsDialog model={editingModelLimits} pending={modelActionPendingID === editingModelLimits?.id} onClose={() => setEditingModelLimits(null)} onUpdate={handleUpdateModelLimits} />
+      {manualModelCreateOpen ? <ManualModelDialog providers={dashboard?.providers ?? []} pending={modelActionPendingID === "manual-create"} onClose={() => setManualModelCreateOpen(false)} onCreate={handleCreateManualModel} /> : null}
+      <ModelDeleteDialog change={pendingModelDelete} pending={modelActionPendingID !== null} onConfirm={handleConfirmModelDelete} onCancel={handleCancelModelDelete} />
       <ModelChangeDialog change={pendingModelChange} pending={modelActionPendingID !== null} onConfirm={handleConfirmModelChange} onCancel={handleCancelModelChange} />
     </main>
   );
