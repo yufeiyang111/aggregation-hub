@@ -195,6 +195,30 @@ type CredentialStateDTO struct {
 	MaskedHint string `json:"masked_hint,omitempty"`
 }
 
+type AdapterConfigDTO struct {
+	WireAPI        string `json:"wire_api"`
+	AuthHeaderMode string `json:"auth_header_mode"`
+}
+
+// SanitizeAdapterConfig 只暴露当前 UI 需要的 allowlist 配置，避免 WebView 接收原始 Adapter JSON。
+func SanitizeAdapterConfig(raw json.RawMessage) AdapterConfigDTO {
+	result := AdapterConfigDTO{WireAPI: "chat_completions", AuthHeaderMode: "authorization_bearer"}
+	var input struct {
+		WireAPI        string `json:"wire_api"`
+		AuthHeaderMode string `json:"auth_header_mode"`
+	}
+	if json.Unmarshal(raw, &input) != nil {
+		return result
+	}
+	if input.WireAPI == "chat_completions" || input.WireAPI == "responses" {
+		result.WireAPI = input.WireAPI
+	}
+	if input.AuthHeaderMode == "authorization_bearer" || input.AuthHeaderMode == "x_api_key" {
+		result.AuthHeaderMode = input.AuthHeaderMode
+	}
+	return result
+}
+
 type ProviderDTO struct {
 	ID              string             `json:"id"`
 	Slug            string             `json:"slug"`
@@ -205,6 +229,7 @@ type ProviderDTO struct {
 	LifecycleStatus ProviderStatus     `json:"lifecycle_status"`
 	Enabled         bool               `json:"enabled"`
 	TimeoutMS       int64              `json:"timeout_ms"`
+	AdapterConfig   AdapterConfigDTO   `json:"adapter_config"`
 	Version         int64              `json:"version"`
 	Credential      CredentialStateDTO `json:"credential"`
 }

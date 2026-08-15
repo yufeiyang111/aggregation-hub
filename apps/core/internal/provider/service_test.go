@@ -90,6 +90,13 @@ func apiKeyInput(slug string, secret *credential.SecretValue) provider.CreatePro
 	return provider.CreateProviderInput{Slug: slug, Name: "套餐", AdapterType: "openai-compatible", AuthType: provider.AuthTypeAPIKey, BaseURL: "https://example.test/v1/", Timeout: 30 * time.Second, AdapterConfigJSON: json.RawMessage(`{"wire_api":"chat_completions"}`), Credential: secret}
 }
 
+func TestSanitizeAdapterConfigUsesAllowlistOnly(t *testing.T) {
+	config := provider.SanitizeAdapterConfig(json.RawMessage(`{"wire_api":"responses","auth_header_mode":"x_api_key","credential":"test-only-secret"}`))
+	if config.WireAPI != "responses" || config.AuthHeaderMode != "x_api_key" {
+		t.Fatalf("安全 Adapter 配置映射错误: %+v", config)
+	}
+}
+
 func TestProviderServiceValidatesInputAndNeverReturnsSecretOrReference(t *testing.T) {
 	database, repository, _, service := openProviderService(t)
 	secret := credential.SecretValue{Bytes: []byte("test-secret-value-9876")}

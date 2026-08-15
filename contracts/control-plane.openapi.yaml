@@ -400,6 +400,14 @@ components:
         lifecycle_status: { $ref: '#/components/schemas/ProviderStatus' }
         enabled: { type: boolean }
         timeout_ms: { type: integer, minimum: 1000, maximum: 3600000 }
+        adapter_config:
+          type: object
+          additionalProperties: false
+          readOnly: true
+          required: [wire_api, auth_header_mode]
+          properties:
+            wire_api: { type: string, enum: [chat_completions, responses] }
+            auth_header_mode: { type: string, enum: [authorization_bearer, x_api_key] }
         version: { type: integer, minimum: 1 }
         credential:
           type: object

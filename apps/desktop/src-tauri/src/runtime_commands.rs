@@ -3,7 +3,7 @@ use tauri::{AppHandle, State};
 use crate::core_process::{
     CoreProcessManager, CreateProviderInput, DashboardSnapshot, ModelListQuery, ModelPage,
     ModelSummary, OneTimeLocalKey, ProviderSummary, ProviderTestResult, RuntimeSnapshot,
-    SyncModelsResult,
+    SyncModelsResult, UpdateProviderInput,
 };
 
 #[tauri::command]
@@ -43,6 +43,19 @@ pub async fn create_provider(
     tauri::async_runtime::spawn_blocking(move || manager.create_provider(input))
         .await
         .map_err(|_| "创建服务失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn update_provider(
+    id: String,
+    input: UpdateProviderInput,
+    adapter_config: super::core_process::AdapterConfig,
+    state: State<'_, CoreProcessManager>,
+) -> Result<ProviderSummary, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.update_provider(id, input, adapter_config))
+        .await
+        .map_err(|_| "更新服务失败".to_owned())?
 }
 
 #[tauri::command]

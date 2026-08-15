@@ -10,15 +10,29 @@ export interface RuntimeSnapshot {
   last_error: string | null;
 }
 
+export interface AdapterConfig {
+  wire_api: "chat_completions" | "responses";
+  auth_header_mode: "authorization_bearer" | "x_api_key";
+}
+
+export interface CredentialState {
+  configured: boolean;
+  masked_hint?: string;
+}
+
 export interface ProviderSummary {
   id: string;
   slug: string;
   name: string;
   adapter_type: string;
+  auth_type: "api_key" | "bearer_token" | "none";
   base_url: string;
   lifecycle_status: string;
   enabled: boolean;
+  timeout_ms: number;
+  adapter_config: AdapterConfig;
   version: number;
+  credential: CredentialState;
 }
 
 export interface DashboardSnapshot {
@@ -34,6 +48,15 @@ export interface CreateProviderInput {
   auth_header_mode: "authorization_bearer" | "x_api_key";
   base_url: string;
   credential?: string;
+}
+
+export interface UpdateProviderInput {
+  name: string;
+  base_url: string;
+  timeout_ms: number;
+  auth_header_mode: AdapterConfig["auth_header_mode"];
+  credential?: string;
+  version: number;
 }
 
 export interface ProviderTestResult {
@@ -100,6 +123,7 @@ export interface OneTimeLocalKey {
 export const desktopApi = {
   dashboard: () => invoke<DashboardSnapshot>("dashboard_status"),
   createProvider: (input: CreateProviderInput) => invoke<ProviderSummary>("create_provider", { input }),
+  updateProvider: (id: string, input: UpdateProviderInput, adapterConfig: AdapterConfig) => invoke<ProviderSummary>("update_provider", { id, input, adapterConfig }),
   deleteProvider: (id: string, version: number) => invoke<void>("delete_provider", { id, version }),
   enableProvider: (id: string, version: number) => invoke<ProviderSummary>("enable_provider", { id, version }),
   disableProvider: (id: string, version: number) => invoke<ProviderSummary>("disable_provider", { id, version }),

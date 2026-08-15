@@ -50,10 +50,20 @@ pub struct ProviderSummary {
     pub slug: String,
     pub name: String,
     pub adapter_type: String,
+    pub auth_type: String,
     pub base_url: String,
     pub lifecycle_status: String,
     pub enabled: bool,
+    pub timeout_ms: i64,
+    pub adapter_config: AdapterConfig,
     pub version: i64,
+    pub credential: CredentialState,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CredentialState {
+    pub configured: bool,
+    pub masked_hint: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -66,6 +76,27 @@ pub struct CreateProviderInput {
     pub auth_header_mode: String,
     pub base_url: String,
     pub credential: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateProviderInput {
+    pub name: String,
+    pub base_url: String,
+    pub timeout_ms: i64,
+    pub auth_header_mode: String,
+    pub credential: Option<String>,
+    pub version: i64,
+}
+
+#[derive(Serialize)]
+struct ProviderUpdateRequest {
+    name: String,
+    base_url: String,
+    timeout_ms: i64,
+    adapter_config: AdapterConfig,
+    credential: Option<EphemeralSecret>,
+    version: i64,
 }
 
 #[derive(Serialize)]
@@ -105,9 +136,10 @@ impl Drop for EphemeralSecret {
     }
 }
 
-#[derive(Serialize)]
-struct AdapterConfig {
-    wire_api: &'static str,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterConfig {
+    wire_api: String,
     auth_header_mode: String,
 }
 
@@ -251,6 +283,27 @@ pub(crate) fn validate_create_provider(input: &CreateProviderInput) -> Result<()
         }
         _ => Ok(()),
     }
+}
+
+pub(crate) fn validate_update_provider(input: &UpdateProviderInput) -> Result<(), String> {
+    if input.name.trim().is_empty()
+        || input.name.chars().count() > 128
+        || input.base_url.trim().is_empty()
+        || input.base_url.len() > 2048
+        || !(1_000..=3_600_000).contains(&input.timeout_ms)
+        || input.version < 1
+        || !matches!(
+            input.auth_header_mode.as_str(),
+            "authorization_bearer" | "x_api_key"
+        )
+        || input
+            .credential
+            .as_deref()
+            .is_some_and(|value| value.trim().is_empty() || value.len() > 5_120)
+    {
+        return Err("服务配置无效".to_owned());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -556,7 +609,7 @@ impl CoreProcessManager {
             base_url: input.base_url.trim().to_owned(),
             timeout_ms: 30_000,
             adapter_config: AdapterConfig {
-                wire_api: "chat_completions",
+                wire_api: "chat_completions".to_owned(),
                 auth_header_mode: input.auth_header_mode,
             },
             credential: input.credential.take().map(EphemeralSecret::from_string),
@@ -581,6 +634,50 @@ impl CoreProcessManager {
             "/internal/v1/providers",
             &request,
         )
+    }
+
+    pub fn update_provider(
+        &self,
+        id: String,
+        mut input: UpdateProviderInput,
+        adapter_config: AdapterConfig,
+    ) -> Result<ProviderSummary, String> {
+        if !valid_model_id(&id) {
+            return Err("服务标识无效".to_owned());
+        }
+        validate_update_provider(&input)?;
+        if !matches!(
+            adapter_config.wire_api.as_str(),
+            "chat_completions" | "responses"
+        ) {
+            return Err("服务配置无效".to_owned());
+        }
+        let request = ProviderUpdateRequest {
+            name: input.name.trim().to_owned(),
+            base_url: input.base_url.trim().to_owned(),
+            timeout_ms: input.timeout_ms,
+            adapter_config: AdapterConfig {
+                wire_api: adapter_config.wire_api,
+                auth_header_mode: input.auth_header_mode,
+            },
+            credential: input.credential.take().map(EphemeralSecret::from_string),
+            version: input.version,
+        };
+        let path = format!("/internal/v1/providers/{id}");
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::patch_json(&ready.control_url, token.as_str(), &path, &request)
     }
 
     pub fn delete_provider(&self, id: String, version: i64) -> Result<(), String> {

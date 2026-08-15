@@ -29,6 +29,18 @@ pub(crate) fn post_json<Request: Serialize, Response: DeserializeOwned>(
     result
 }
 
+pub(crate) fn patch_json<Request: Serialize, Response: DeserializeOwned>(
+    control_url: &str,
+    token: &str,
+    path: &str,
+    payload: &Request,
+) -> Result<Response, String> {
+    let mut body = serde_json::to_vec(payload).map_err(|_| "管理请求编码失败".to_owned())?;
+    let result = execute_json(control_url, token, "PATCH", path, Some(&body));
+    body.fill(0);
+    result
+}
+
 pub(crate) fn delete_json<Request: Serialize>(
     control_url: &str,
     token: &str,

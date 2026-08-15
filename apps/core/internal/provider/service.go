@@ -375,7 +375,7 @@ func providerDTO(value Provider, maskedHint string) ProviderDTO {
 			credentialState.MaskedHint = "已配置"
 		}
 	}
-	return ProviderDTO{ID: value.ID, Slug: value.Slug, Name: value.Name, AdapterType: value.AdapterType, AuthType: value.AuthType, BaseURL: value.BaseURL, LifecycleStatus: value.LifecycleStatus, Enabled: value.Enabled, TimeoutMS: value.Timeout.Milliseconds(), Version: value.Version, Credential: credentialState}
+	return ProviderDTO{ID: value.ID, Slug: value.Slug, Name: value.Name, AdapterType: value.AdapterType, AuthType: value.AuthType, BaseURL: value.BaseURL, LifecycleStatus: value.LifecycleStatus, Enabled: value.Enabled, TimeoutMS: value.Timeout.Milliseconds(), AdapterConfig: SanitizeAdapterConfig(value.AdapterConfigJSON), Version: value.Version, Credential: credentialState}
 }
 
 func maskSecret(value credential.SecretValue) string {

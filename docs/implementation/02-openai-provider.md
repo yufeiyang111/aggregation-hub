@@ -150,7 +150,7 @@ Expected PASS。Suggested commit: `feat(adapter): proxy OpenAI chat streams and 
 - [ ] Write ProviderWizard tests: required fields、invalid slug/base URL、duplicate submit blocked、masked credential not resubmitted、test failure actionable。
 - [ ] Implement wizard steps and model selection；new synced models default disabled。
 - [x] Implement list loading/empty/error/success、filter、pagination、enable confirmations。
-当前进度：Core 已实现同步模型默认禁用、模型控制面列表/筛选/分页以及乐观锁启用/禁用；Data Plane `GET /v1/models` 仅暴露 Provider 与模型均可路由的已启用模型。桌面端已通过受限 Tauri Commands 提供 OpenAI 兼容服务创建、测试、同步、服务启停、删除确认和模型启停；删除命令只允许固定 Control Plane 路径与版本号，不开放通用管理代理，创建表单不会把凭据写入浏览器存储。Provider 编辑、凭据替换/轮换、模型能力覆盖和真实客户端联调仍未实现。
+当前进度：Core 已实现同步模型默认禁用、模型控制面列表/筛选/分页以及乐观锁启用/禁用；Data Plane `GET /v1/models` 仅暴露 Provider 与模型均可路由的已启用模型。桌面端已通过受限 Tauri Commands 提供 OpenAI 兼容服务创建、编辑、测试、同步、服务启停、删除确认和模型启停；编辑请求只允许固定 Provider 路径、乐观锁版本和 allowlist 后的 Adapter 配置，密钥字段为空时保留既有凭据，填写新值时才替换，完整值不回显到列表或浏览器存储。凭据轮换/撤销、模型能力覆盖和真实客户端联调仍未实现。
 
 - [ ] Run:
 

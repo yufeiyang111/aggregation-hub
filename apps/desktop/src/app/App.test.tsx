@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const apiMocks = vi.hoisted(() => ({
   dashboard: vi.fn(),
   createProvider: vi.fn(),
+  updateProvider: vi.fn(),
   deleteProvider: vi.fn(),
   enableProvider: vi.fn(),
   disableProvider: vi.fn(),
@@ -39,9 +40,13 @@ const runningDashboard = {
       slug: "package-a",
       name: "Package A",
       adapter_type: "openai-compatible",
+      auth_type: "api_key" as const,
       base_url: "https://example.test",
       lifecycle_status: "enabled",
       enabled: true,
+      timeout_ms: 30000,
+      adapter_config: { wire_api: "chat_completions" as const, auth_header_mode: "authorization_bearer" as const },
+      credential: { configured: true, masked_hint: "已配置" },
       version: 1,
     },
   ],
@@ -74,6 +79,7 @@ describe("App", () => {
   beforeEach(() => {
     apiMocks.dashboard.mockReset();
     apiMocks.createProvider.mockReset();
+    apiMocks.updateProvider.mockReset();
     apiMocks.deleteProvider.mockReset();
     apiMocks.enableProvider.mockReset();
     apiMocks.disableProvider.mockReset();
@@ -88,6 +94,7 @@ describe("App", () => {
     apiMocks.restart.mockReset();
     apiMocks.dashboard.mockResolvedValue(runningDashboard);
     apiMocks.createProvider.mockResolvedValue(runningDashboard.providers[0]);
+    apiMocks.updateProvider.mockResolvedValue(runningDashboard.providers[0]);
     apiMocks.deleteProvider.mockResolvedValue(undefined);
     apiMocks.enableProvider.mockResolvedValue({ ...runningDashboard.providers[0], enabled: true, version: 2 });
     apiMocks.disableProvider.mockResolvedValue({ ...runningDashboard.providers[0], enabled: false, version: 2 });
@@ -216,6 +223,27 @@ describe("App", () => {
     expect(apiMocks.deleteProvider).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(apiMocks.deleteProvider).toHaveBeenCalledWith("provider-1", 1));
+  });
+
+  it("updates provider settings without resubmitting the existing credential", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("Package A");
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("dialog", { name: "编辑服务" })).toBeTruthy();
+    const name = screen.getByLabelText("名称");
+    await user.clear(name);
+    await user.type(name, "Package B");
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(apiMocks.updateProvider).toHaveBeenCalledWith("provider-1", {
+      name: "Package B",
+      base_url: "https://example.test",
+      timeout_ms: 30000,
+      auth_header_mode: "authorization_bearer",
+      credential: undefined,
+      version: 1,
+    }, { wire_api: "chat_completions", auth_header_mode: "authorization_bearer" }));
   });
 
 });

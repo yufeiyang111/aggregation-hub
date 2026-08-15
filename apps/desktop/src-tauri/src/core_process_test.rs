@@ -1,6 +1,6 @@
 use crate::core_process::{
-    build_model_list_path, validate_create_provider, CreateProviderInput, ModelListQuery,
-    ReadyEvent, RuntimeLifecycle, RuntimeState,
+    build_model_list_path, validate_create_provider, validate_update_provider, CreateProviderInput,
+    ModelListQuery, ReadyEvent, RuntimeLifecycle, RuntimeState, UpdateProviderInput,
 };
 
 fn ready_event() -> ReadyEvent {
@@ -105,6 +105,29 @@ fn model_query_builder_uses_only_typed_safe_parameters() {
     assert!(build_model_list_path(&ModelListQuery {
         search: Some(" bad".to_owned()),
         ..ModelListQuery::default()
+    })
+    .is_err());
+}
+
+#[test]
+fn provider_update_input_allows_credential_omission_and_rejects_invalid_versions() {
+    let valid = UpdateProviderInput {
+        name: "Provider A".to_owned(),
+        base_url: "https://example.test".to_owned(),
+        timeout_ms: 30_000,
+        auth_header_mode: "authorization_bearer".to_owned(),
+        credential: None,
+        version: 2,
+    };
+    assert!(validate_update_provider(&valid).is_ok());
+    assert!(validate_update_provider(&UpdateProviderInput {
+        version: 0,
+        ..valid.clone()
+    })
+    .is_err());
+    assert!(validate_update_provider(&UpdateProviderInput {
+        credential: Some("  ".to_owned()),
+        ..valid
     })
     .is_err());
 }

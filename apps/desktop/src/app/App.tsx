@@ -1,5 +1,5 @@
 import { type ChangeEvent, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { desktopApi, type CreateProviderInput, type DashboardSnapshot, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState } from "../lib/desktop-api";
+import { desktopApi, type CreateProviderInput, type DashboardSnapshot, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
 
 type PageID = "services" | "models" | "clients" | "logs" | "settings";
 type CopyState = "idle" | "copied" | "failed";
@@ -59,7 +59,7 @@ function EmptyState({ title, description }: { title: string; description: string
   );
 }
 
-function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest, onSyncModels, onRequestChange, onRequestDelete }: {
+function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest, onSyncModels, onRequestChange, onRequestEdit, onRequestDelete }: {
   provider: ProviderSummary;
   runtimeRunning: boolean;
   actionPending: boolean;
@@ -67,11 +67,13 @@ function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest
   onTest: (provider: ProviderSummary) => void;
   onSyncModels: (provider: ProviderSummary) => void;
   onRequestChange: (provider: ProviderSummary, enabled: boolean) => void;
+  onRequestEdit: (provider: ProviderSummary) => void;
   onRequestDelete: (provider: ProviderSummary) => void;
 }) {
   const handleTest = useCallback(() => onTest(provider), [onTest, provider]);
   const handleSyncModels = useCallback(() => onSyncModels(provider), [onSyncModels, provider]);
   const handleToggle = useCallback(() => onRequestChange(provider, !provider.enabled), [onRequestChange, provider]);
+  const handleEdit = useCallback(() => onRequestEdit(provider), [onRequestEdit, provider]);
   const handleDelete = useCallback(() => onRequestDelete(provider), [onRequestDelete, provider]);
   const disabled = !runtimeRunning || actionPending;
 
@@ -91,6 +93,7 @@ function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest
           <button type="button" className="button button-secondary" onClick={handleTest} disabled={disabled}>测试</button>
           <button type="button" className="button button-secondary" onClick={handleSyncModels} disabled={disabled}>同步模型</button>
           <button type="button" className={provider.enabled ? "button button-secondary" : "button button-primary"} onClick={handleToggle} disabled={disabled}>{actionPending ? "正在更新" : provider.enabled ? "停用" : "启用"}</button>
+          <button type="button" className="button button-secondary" onClick={handleEdit} disabled={disabled}>编辑</button>
           <button type="button" className="button button-secondary button-danger" onClick={handleDelete} disabled={disabled}>删除</button>
         </div>
       </div>
@@ -98,7 +101,7 @@ function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest
   );
 }
 
-function ServicePage({ dashboard, loading, actionPendingID, feedback, onCreate, onTest, onSyncModels, onRequestChange, onRequestDelete }: {
+function ServicePage({ dashboard, loading, actionPendingID, feedback, onCreate, onTest, onSyncModels, onRequestChange, onRequestEdit, onRequestDelete }: {
   dashboard: DashboardSnapshot | null;
   loading: boolean;
   actionPendingID: string | null;
@@ -107,6 +110,7 @@ function ServicePage({ dashboard, loading, actionPendingID, feedback, onCreate, 
   onTest: (provider: ProviderSummary) => void;
   onSyncModels: (provider: ProviderSummary) => void;
   onRequestChange: (provider: ProviderSummary, enabled: boolean) => void;
+  onRequestEdit: (provider: ProviderSummary) => void;
   onRequestDelete: (provider: ProviderSummary) => void;
 }) {
   const providers = dashboard?.providers ?? [];
@@ -129,7 +133,7 @@ function ServicePage({ dashboard, loading, actionPendingID, feedback, onCreate, 
       {!loading && providers.length === 0 ? <EmptyState title="还没有服务" description="新增一个 OpenAI 兼容服务后，即可测试连接并同步模型。" /> : null}
       {providers.length > 0 ? (
         <ul className="service-list" aria-label="已保存服务">
-          {providers.map((provider) => <ProviderRow key={provider.id} provider={provider} runtimeRunning={runtimeRunning} actionPending={actionPendingID === provider.id} feedback={feedback} onTest={onTest} onSyncModels={onSyncModels} onRequestChange={onRequestChange} onRequestDelete={onRequestDelete} />)}
+          {providers.map((provider) => <ProviderRow key={provider.id} provider={provider} runtimeRunning={runtimeRunning} actionPending={actionPendingID === provider.id} feedback={feedback} onTest={onTest} onSyncModels={onSyncModels} onRequestChange={onRequestChange} onRequestEdit={onRequestEdit} onRequestDelete={onRequestDelete} />)}
         </ul>
       ) : null}
     </section>
@@ -200,6 +204,44 @@ function CreateProviderDialog({ open, pending, onClose, onCreate }: { open: bool
       </section>
     </div>
   );
+}
+
+function EditProviderDialog({ provider, pending, onClose, onUpdate }: { provider: ProviderSummary | null; pending: boolean; onClose: () => void; onUpdate: (provider: ProviderSummary, input: UpdateProviderInput) => Promise<boolean> }) {
+  const [name, setName] = useState("");
+  const [baseURL, setBaseURL] = useState("");
+  const [timeoutMS, setTimeoutMS] = useState("30000");
+  const [authHeaderMode, setAuthHeaderMode] = useState<UpdateProviderInput["auth_header_mode"]>("authorization_bearer");
+  const [credential, setCredential] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!provider) return;
+    setName(provider.name);
+    setBaseURL(provider.base_url);
+    setTimeoutMS(String(provider.timeout_ms));
+    setAuthHeaderMode(provider.adapter_config.auth_header_mode);
+    setCredential("");
+    setFormError(null);
+  }, [provider]);
+
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!provider) return;
+    const normalizedName = name.trim();
+    const normalizedURL = baseURL.trim();
+    const parsedTimeout = Number(timeoutMS);
+    if (normalizedName === "" || normalizedURL === "" || !Number.isInteger(parsedTimeout) || parsedTimeout < 1000 || parsedTimeout > 3600000) {
+      setFormError("请检查名称、上游地址和超时时间。");
+      return;
+    }
+    setFormError(null);
+    const updated = await onUpdate(provider, { name: normalizedName, base_url: normalizedURL, timeout_ms: parsedTimeout, auth_header_mode: authHeaderMode, credential: credential.trim() === "" ? undefined : credential, version: provider.version });
+    setCredential("");
+    if (updated) onClose();
+  }, [authHeaderMode, baseURL, credential, name, onClose, onUpdate, provider, timeoutMS]);
+
+  if (!provider) return null;
+  return <div className="dialog-backdrop" role="presentation"><section className="confirm-dialog provider-dialog" role="dialog" aria-modal="true" aria-labelledby="provider-edit-title"><div className="dialog-heading"><div><h2 id="provider-edit-title">编辑服务</h2><p>保留密钥输入为空即可继续使用当前凭据；填写新值才会替换。</p></div><button type="button" className="dialog-close" aria-label="关闭编辑服务" onClick={onClose} disabled={pending}>×</button></div><form className="provider-form" onSubmit={handleSubmit}><label><span>名称</span><input className="text-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={128} autoFocus /></label><label><span>上游地址</span><input className="text-input" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} maxLength={2048} inputMode="url" /></label><label><span>超时（毫秒）</span><input className="text-input" value={timeoutMS} onChange={(event) => setTimeoutMS(event.target.value)} inputMode="numeric" /></label><label><span>认证请求头</span><select className="text-input" value={authHeaderMode} onChange={(event) => setAuthHeaderMode(event.target.value as UpdateProviderInput["auth_header_mode"])}><option value="authorization_bearer">Authorization: Bearer</option><option value="x_api_key">X-API-Key</option></select></label>{provider.auth_type !== "none" ? <label className="provider-form-wide"><span>替换上游密钥（可选）</span><input className="text-input" value={credential} onChange={(event) => setCredential(event.target.value)} type="password" autoComplete="off" maxLength={5120} placeholder={provider.credential.configured ? "当前凭据已配置" : "填写新的上游密钥"} /></label> : null}{formError ? <p className="form-error" role="alert">{formError}</p> : null}<div className="button-group provider-form-wide"><button type="button" className="button button-secondary" onClick={onClose} disabled={pending}>取消</button><button type="submit" className="button button-primary" disabled={pending}>{pending ? "正在保存" : "保存修改"}</button></div></form></section></div>;
 }
 
 function ProviderChangeDialog({ change, pending, onConfirm, onCancel }: { change: PendingProviderChange | null; pending: boolean; onConfirm: () => void; onCancel: () => void }) {
@@ -493,6 +535,7 @@ export function App() {
   const [modelCapabilityFilter, setModelCapabilityFilter] = useState<"" | ModelCapability>("");
   const [modelQuery, setModelQuery] = useState<ModelListQuery>({ page_size: 50 });
   const [providerCreateOpen, setProviderCreateOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<ProviderSummary | null>(null);
   const [providerActionPendingID, setProviderActionPendingID] = useState<string | null>(null);
   const [pendingProviderChange, setPendingProviderChange] = useState<PendingProviderChange | null>(null);
   const [pendingProviderDelete, setPendingProviderDelete] = useState<PendingProviderDelete | null>(null);
@@ -653,6 +696,22 @@ export function App() {
       return false;
     } finally {
       setActionPending(false);
+    }
+  }, [refresh]);
+
+  const handleUpdateProvider = useCallback(async (provider: ProviderSummary, input: UpdateProviderInput) => {
+    setProviderActionPendingID(provider.id);
+    try {
+      await desktopApi.updateProvider(provider.id, input, provider.adapter_config);
+      setModelsFetched(false);
+      await refresh();
+      setError(null);
+      return true;
+    } catch (reason) {
+      setError(safeMessage(reason, "更新服务失败"));
+      return false;
+    } finally {
+      setProviderActionPendingID(null);
     }
   }, [refresh]);
 
@@ -819,7 +878,7 @@ export function App() {
   }, [copyText, runtime?.data_plane_url]);
 
   const renderPage = () => {
-    if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestDelete={handleRequestProviderDelete} />;
+    if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestEdit={setEditingProvider} onRequestDelete={handleRequestProviderDelete} />;
     if (activePage === "models") {
       return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} />;
     }
@@ -878,6 +937,7 @@ export function App() {
       {error ? <p className="error-banner" role="alert">{error}</p> : null}
       <div className="page-container">{renderPage()}</div>
       <CreateProviderDialog open={providerCreateOpen} pending={actionPending} onClose={() => setProviderCreateOpen(false)} onCreate={handleCreateProvider} />
+      <EditProviderDialog provider={editingProvider} pending={providerActionPendingID !== null} onClose={() => setEditingProvider(null)} onUpdate={handleUpdateProvider} />
       <ProviderChangeDialog change={pendingProviderChange} pending={providerActionPendingID !== null} onConfirm={handleConfirmProviderChange} onCancel={handleCancelProviderChange} />
       <ProviderDeleteDialog provider={pendingProviderDelete?.provider ?? null} pending={providerActionPendingID !== null} onConfirm={handleConfirmProviderDelete} onCancel={handleCancelProviderDelete} />
       <ModelChangeDialog change={pendingModelChange} pending={modelActionPendingID !== null} onConfirm={handleConfirmModelChange} onCancel={handleCancelModelChange} />

@@ -245,6 +245,7 @@ func safeProviderDTO(value provider.Provider) provider.ProviderDTO {
 		LifecycleStatus: value.LifecycleStatus,
 		Enabled:         value.Enabled,
 		TimeoutMS:       value.Timeout.Milliseconds(),
+		AdapterConfig:   provider.SanitizeAdapterConfig(value.AdapterConfigJSON),
 		Version:         value.Version,
 		Credential:      provider.CredentialStateDTO{Configured: value.CredentialRef != nil},
 	}
