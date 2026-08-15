@@ -13,7 +13,7 @@ const SIDECAR_NAME: &str = "aggregation-hub-core";
 const BOOTSTRAP_ARGUMENT: &str = "--bootstrap-stdin";
 const MANAGEMENT_TOKEN_BYTES: usize = 32;
 const MAX_READY_LINE_BYTES: usize = 8 * 1024;
-const CORE_VERSION: &str = "0.1.0-rc.5";
+const CORE_VERSION: &str = "0.1.0-rc.6";
 
 #[cfg(target_os = "windows")]
 const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x0000_0002;

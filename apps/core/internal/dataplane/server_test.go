@@ -12,7 +12,7 @@ import (
 
 func TestNewServerUsesLoopbackAndTimeouts(t *testing.T) {
 	cfg := config.Runtime{
-		Version:    "0.1.0-rc.5",
+		Version:    "0.1.0-rc.6",
 		ListenPort: 18443,
 	}
 
@@ -49,7 +49,7 @@ func TestRuntimeExposesNoHostOverrideAndServerAlwaysUsesLoopback(t *testing.T) {
 		}
 	}
 
-	cfg := config.Runtime{Version: "0.1.0-rc.5", ListenPort: 19443}
+	cfg := config.Runtime{Version: "0.1.0-rc.6", ListenPort: 19443}
 	server := dataplane.NewServer(cfg, http.NewServeMux())
 	if server.Addr != config.LoopbackHost+":19443" {
 		t.Fatalf("server addr=%q, want loopback port 19443", server.Addr)

@@ -60,7 +60,7 @@ Ingress 按入口协议转换错误外形。`details` 只允许白名单字段�
 无需鉴权，只返回最小状态：
 
 ```json
-{"status":"ok","version":"0.1.0-rc.5","data_plane":"ready"}
+{"status":"ok","version":"0.1.0-rc.6","data_plane":"ready"}
 ```
 
 不得返回 Provider、路径、数据库和凭据详情。
