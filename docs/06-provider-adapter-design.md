@@ -24,11 +24,11 @@ type Adapter interface {
     ConfigSchema() json.RawMessage
     ValidateConfig(config json.RawMessage) error
 
-    DiscoverModels(ctx context.Context, client UpstreamClient, provider ProviderRuntime) ([]DiscoveredModel, error)
+    DiscoverModels(ctx context.Context, client UpstreamClient, provider ProviderRuntime, credential Credential) ([]DiscoveredModel, error)
     BuildRequest(ctx context.Context, route RoutePlan, request NormalizedRequest, credential Credential) (*http.Request, error)
     ParseResponse(ctx context.Context, route RoutePlan, response *http.Response) (NormalizedResponse, error)
     ParseStream(ctx context.Context, route RoutePlan, response *http.Response, emit StreamEmitter) error
-    Test(ctx context.Context, client UpstreamClient, provider ProviderRuntime, kind CapabilityTestKind) CapabilityTestResult
+    Test(ctx context.Context, client UpstreamClient, provider ProviderRuntime, credential Credential, kind CapabilityTestKind) CapabilityTestResult
 }
 ```
 
@@ -42,7 +42,7 @@ ProviderRuntime 只包含 ID、slug、结构化 Base URL、认证类型、非秘
 
 ## 5. 凭据
 
-Core 根据 RoutePlan 的 credential_ref 调用 CredentialStore，生成短生命周期 Credential。Adapter 不直接依赖 Windows Credential Manager。
+Core 根据 RoutePlan 的 credential_ref 调用 CredentialStore，生成短生命周期 Credential，并在模型发现、连通性测试、请求构造时显式传入 Adapter。Adapter 不直接依赖 Windows Credential Manager。
 
 OAuth 使用 TokenProvider：AccessToken、Refresh、Revoke。同一账户并发刷新必须 singleflight，不能同时发多个 Refresh 请求。
 

@@ -94,3 +94,93 @@ func TestModelRepositoryRejectsInvalidAndDuplicateInput(t *testing.T) {
 		t.Fatalf("测试输入不应无法编码: %v", err)
 	}
 }
+
+func TestModelRepositoryListsFiltersAndAuditsEnablement(t *testing.T) {
+	database := openMigratedDatabase(t)
+	providers, err := storage.NewProviderRepository(database)
+	if err != nil {
+		t.Fatalf("创建 Provider 仓储失败: %v", err)
+	}
+	models, err := storage.NewModelRepository(database)
+	if err != nil {
+		t.Fatalf("创建模型仓储失败: %v", err)
+	}
+	value := testProvider("01H00000000000000000000041", "filter", nil)
+	if err := providers.Create(context.Background(), value, testAudit("01H00000000000000000000042", value.ID)); err != nil {
+		t.Fatalf("创建 Provider 失败: %v", err)
+	}
+	now := time.UnixMilli(1_700_000_010_000).UTC()
+	discovered := []provider.SyncedModel{
+		{UpstreamModelID: "tool-model", DisplayName: "Tool Model", Source: provider.ModelSourceUpstream, Capabilities: provider.Capabilities{Streaming: true, Tools: true}, CapabilitySource: "upstream"},
+		{UpstreamModelID: "plain-model", DisplayName: "Plain Model", Source: provider.ModelSourceUpstream, Capabilities: provider.Capabilities{Streaming: true}, CapabilitySource: "upstream"},
+	}
+	if err := models.ReconcileSyncedModels(context.Background(), value.ID, value.Slug, discovered, now); err != nil {
+		t.Fatalf("同步模型失败: %v", err)
+	}
+	page, err := models.List(context.Background(), provider.ModelPageQuery{PageSize: 1, ProviderID: value.ID})
+	if err != nil || len(page.Items) != 1 || page.NextCursor == "" {
+		t.Fatalf("模型分页结果错误: %+v, %v", page, err)
+	}
+	page, err = models.List(context.Background(), provider.ModelPageQuery{PageSize: 10, ProviderID: value.ID, Capability: "tools"})
+	if err != nil || len(page.Items) != 1 || page.Items[0].PublicModelID != "filter/tool-model" {
+		t.Fatalf("能力筛选错误: %+v, %v", page, err)
+	}
+	page, err = models.List(context.Background(), provider.ModelPageQuery{PageSize: 10, Search: "Tool"})
+	if err != nil || len(page.Items) != 1 || page.Items[0].DisplayName != "Tool Model" {
+		t.Fatalf("搜索筛选错误: %+v, %v", page, err)
+	}
+	model := page.Items[0]
+	enabled, err := models.SetEnabled(context.Background(), model.ID, model.Version, true, provider.AuditEvent{ID: "01H00000000000000000000043", EventType: "model_enabled", EntityType: "model", EntityID: model.ID, DetailJSON: json.RawMessage(`{"enabled":true}`), CreatedAt: now.Add(time.Minute)})
+	if err != nil || !enabled.Enabled || enabled.Version != model.Version+1 {
+		t.Fatalf("启用模型错误: %+v, %v", enabled, err)
+	}
+	filterEnabled := true
+	page, err = models.List(context.Background(), provider.ModelPageQuery{PageSize: 10, Enabled: &filterEnabled})
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != model.ID {
+		t.Fatalf("启用状态筛选错误: %+v, %v", page, err)
+	}
+	if _, err := models.SetEnabled(context.Background(), model.ID, model.Version, false, provider.AuditEvent{ID: "01H00000000000000000000044", EventType: "model_disabled", EntityType: "model", EntityID: model.ID, DetailJSON: json.RawMessage(`{"enabled":false}`), CreatedAt: now.Add(2 * time.Minute)}); !errors.Is(err, provider.ErrStaleResource) {
+		t.Fatalf("旧版本启停错误=%v", err)
+	}
+	var eventType string
+	if err := database.QueryRow(`SELECT event_type FROM audit_events WHERE id=?`, "01H00000000000000000000043").Scan(&eventType); err != nil || eventType != "model_enabled" {
+		t.Fatalf("模型审计事件错误: %q, %v", eventType, err)
+	}
+	if _, err := models.List(context.Background(), provider.ModelPageQuery{PageSize: 10, Capability: "unknown"}); !errors.Is(err, provider.ErrInvalidModel) {
+		t.Fatalf("非法能力筛选错误=%v", err)
+	}
+}
+
+func TestModelRepositoryDoesNotEnableMissingUpstreamModel(t *testing.T) {
+	database := openMigratedDatabase(t)
+	providers, err := storage.NewProviderRepository(database)
+	if err != nil {
+		t.Fatalf("创建 Provider 仓储失败: %v", err)
+	}
+	models, err := storage.NewModelRepository(database)
+	if err != nil {
+		t.Fatalf("创建模型仓储失败: %v", err)
+	}
+	value := testProvider("01H00000000000000000000051", "missing", nil)
+	if err := providers.Create(context.Background(), value, testAudit("01H00000000000000000000052", value.ID)); err != nil {
+		t.Fatalf("创建 Provider 失败: %v", err)
+	}
+	now := time.UnixMilli(1_700_000_020_000).UTC()
+	if err := models.ReconcileSyncedModels(context.Background(), value.ID, value.Slug, []provider.SyncedModel{{UpstreamModelID: "gone", DisplayName: "Gone", Source: provider.ModelSourceUpstream, CapabilitySource: "upstream"}}, now); err != nil {
+		t.Fatalf("同步模型失败: %v", err)
+	}
+	model, err := models.FindByPublicID(context.Background(), "missing/gone")
+	if err != nil {
+		t.Fatalf("读取模型失败: %v", err)
+	}
+	if err := models.ReconcileSyncedModels(context.Background(), value.ID, value.Slug, nil, now.Add(time.Minute)); err != nil {
+		t.Fatalf("标记缺失模型失败: %v", err)
+	}
+	model, err = models.FindByID(context.Background(), model.ID)
+	if err != nil {
+		t.Fatalf("按 ID 读取模型失败: %v", err)
+	}
+	if _, err := models.SetEnabled(context.Background(), model.ID, model.Version, true, provider.AuditEvent{ID: "01H00000000000000000000053", EventType: "model_enabled", EntityType: "model", EntityID: model.ID, DetailJSON: json.RawMessage(`{"enabled":true}`), CreatedAt: now.Add(2 * time.Minute)}); !errors.Is(err, provider.ErrInvalidModel) {
+		t.Fatalf("缺失模型不应启用，错误=%v", err)
+	}
+}

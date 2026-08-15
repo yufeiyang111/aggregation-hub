@@ -3,8 +3,8 @@ info:
   title: Aggregation Hub Core Control Plane
   version: 0.1.0-rc.6
   description: >-
-    Core Control Plane 的最小运行时状态契约。响应只包含非敏感运行时元数据；
-    管理令牌、Provider 凭据、数据库路径和请求正文不属于此契约。
+    Core Control Plane 的本地回环契约。响应只包含非敏感运行时、Provider 和模型元数据；
+    管理令牌、上游凭据、数据库路径和请求正文不属于可持久化契约。
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -16,9 +16,6 @@ paths:
     get:
       operationId: getRuntimeStatus
       summary: 查询 Core 运行时状态
-      description: >-
-        返回 Core 当前生命周期状态和 Data Plane 的本地地址。
-        React 不直接调用此接口，桌面端通过 Tauri Commands 间接访问。
       security:
         - ManagementToken: []
       responses:
@@ -29,58 +26,516 @@ paths:
               schema:
                 $ref: '#/components/schemas/RuntimeStatus'
         '401':
-          description: 管理令牌缺失或无效
+          $ref: '#/components/responses/InvalidManagementToken'
+  /internal/v1/runtime/shutdown:
+    post:
+      operationId: shutdownRuntime
+      summary: 请求 Core 优雅停止
+      security:
+        - ManagementToken: []
+      responses:
+        '202':
+          description: Core 已接受停止请求
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: accepted
+        '401':
+          $ref: '#/components/responses/InvalidManagementToken'
+        '500':
+          $ref: '#/components/responses/ControlPlaneError'
+  /internal/v1/providers:
+    get:
+      operationId: listProviders
+      summary: 列出本地服务配置
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 服务分页结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderPage'
+        '401':
+          $ref: '#/components/responses/InvalidManagementToken'
+        '500':
+          $ref: '#/components/responses/ControlPlaneError'
+    post:
+      operationId: createProvider
+      summary: 创建 OpenAI 兼容服务
+      description: 上游凭据只作为受限写入字段提交给 Core；响应不含完整值或凭据引用。
+      security:
+        - ManagementToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderCreateInput'
+      responses:
+        '201':
+          description: 已创建的服务
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '400':
+          $ref: '#/components/responses/ControlPlaneError'
+        '401':
+          $ref: '#/components/responses/InvalidManagementToken'
+        '409':
+          $ref: '#/components/responses/ControlPlaneError'
+        '500':
+          $ref: '#/components/responses/ControlPlaneError'
+  /internal/v1/providers/{id}:
+    get:
+      operationId: getProvider
+      summary: 查询单个本地服务配置
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: 服务配置（不含完整凭据）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Provider' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+    patch:
+      operationId: updateProvider
+      summary: 更新本地服务配置或替换凭据
+      description: 凭据字段省略时保留既有凭据；响应不含完整凭据或凭据引用。
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderUpdateInput' }
+      responses:
+        '200':
+          description: 已更新的服务
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Provider' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+    delete:
+      operationId: deleteProvider
+      summary: 删除本地服务配置
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionRequest' }
+      responses:
+        '204': { description: 服务已删除 }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/providers/{id}/enable:
+    post:
+      operationId: enableProvider
+      summary: 启用服务
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionRequest'
+      responses:
+        '200':
+          description: 已启用的服务
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/providers/{id}/disable:
+    post:
+      operationId: disableProvider
+      summary: 停用服务
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionRequest'
+      responses:
+        '200':
+          description: 已停用的服务
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/providers/{id}/test:
+    post:
+      operationId: testProvider
+      summary: 测试服务连接和模型发现能力
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: 不泄露凭据的测试结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderTestResult'
+        '401':
+          $ref: '#/components/responses/InvalidManagementToken'
+  /internal/v1/providers/{id}/sync-models:
+    post:
+      operationId: syncProviderModels
+      summary: 从上游同步模型目录
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: 已同步的模型数量；新模型默认禁用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncModelsResult'
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '502': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/models:
+    get:
+      operationId: listModels
+      summary: 列出已同步的本地模型目录
+      description: 包含未启用或上游暂缺的模型，供桌面端筛选和启停。
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: provider_id
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - name: lifecycle_status
+          in: query
+          schema: { $ref: '#/components/schemas/ManageableModelStatus' }
+        - name: enabled
+          in: query
+          schema: { type: boolean }
+        - name: capability
+          in: query
+          schema: { type: string, enum: [streaming, tools, parallel_tools, reasoning, thinking, vision] }
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: 模型分页结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPage'
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '500': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/models/{id}/enable:
+    post:
+      operationId: enableModel
+      summary: 启用可用模型
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ModelID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionRequest' }
+      responses:
+        '200':
+          description: 已启用的模型
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Model' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+        '500': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/models/{id}/disable:
+    post:
+      operationId: disableModel
+      summary: 停用模型
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ModelID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionRequest' }
+      responses:
+        '200':
+          description: 已停用的模型
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Model' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '404': { $ref: '#/components/responses/ControlPlaneError' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+        '500': { $ref: '#/components/responses/ControlPlaneError' }
 components:
   securitySchemes:
     ManagementToken:
       type: apiKey
       in: header
       name: X-Aggregation-Hub-Management-Token
-      description: >-
-        仅供 Tauri Rust Sidecar 使用的每次启动随机管理令牌；
-        不得暴露给 WebView、日志、URL、数据库或外部客户端。
+      description: 每次启动随机生成，仅供 Tauri Rust Sidecar 使用；不得暴露给 WebView、日志、URL 或数据库。
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string, minLength: 1, maxLength: 64 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    ProviderID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 64 }
+    ModelID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 64 }
+  responses:
+    InvalidManagementToken:
+      description: 管理令牌缺失或无效
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ControlPlaneError' }
+    ControlPlaneError:
+      description: 结构化且不含内部详情的错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ControlPlaneError' }
   schemas:
     RuntimeStatus:
       type: object
       additionalProperties: false
-      required:
-        - state
-        - data_plane_url
-        - started_at
-        - version
-        - last_error
+      required: [state, data_plane_url, started_at, version, last_error]
       properties:
         state:
           type: string
-          description: Core 生命周期状态
-          enum:
-            - starting
-            - running
-            - degraded
-            - stopped
-            - failed
+          enum: [starting, running, degraded, stopped, failed]
         data_plane_url:
-          type:
-            - string
-            - 'null'
-          description: Data Plane 回环地址；Core 未运行时可以为 null
+          type: [string, 'null']
           pattern: '^http://127[.]0[.]0[.]1(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$'
         started_at:
-          type:
-            - string
-            - 'null'
+          type: [string, 'null']
           format: date-time
           pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
-          description: 本次 Core 启动时间；尚未启动时可以为 null
         version:
           type: string
           minLength: 1
-          description: Core 版本
         last_error:
-          type:
-            - string
-            - 'null'
+          type: [string, 'null']
           minLength: 1
           maxLength: 2000
           pattern: '^[^\r\n]*$'
-          description: 最近一次可安全展示的错误摘要；没有错误时为 null
+    ProviderStatus:
+      type: string
+      enum: [draft, enabled, degraded, auth_required, disabled, deleted]
+    Provider:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, adapter_type, auth_type, base_url, lifecycle_status, enabled, timeout_ms, version, credential]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 64 }
+        slug: { type: string, pattern: '^[a-z0-9-]{1,48}$' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        adapter_type: { type: string, enum: [openai-compatible, local-openai-compatible] }
+        auth_type: { type: string, enum: [api_key, bearer_token, oauth, none] }
+        base_url: { type: string, format: uri, maxLength: 2048 }
+        lifecycle_status: { $ref: '#/components/schemas/ProviderStatus' }
+        enabled: { type: boolean }
+        timeout_ms: { type: integer, minimum: 1000, maximum: 3600000 }
+        version: { type: integer, minimum: 1 }
+        credential:
+          type: object
+          additionalProperties: false
+          readOnly: true
+          required: [configured]
+          properties:
+            configured: { type: boolean }
+            masked_hint: { type: string, minLength: 1, maxLength: 128 }
+    ProviderCreateInput:
+      type: object
+      additionalProperties: false
+      required: [slug, name, adapter_type, auth_type, base_url, timeout_ms, adapter_config, version]
+      properties:
+        slug: { type: string, pattern: '^[a-z0-9-]{1,48}$' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        adapter_type: { type: string, enum: [openai-compatible, local-openai-compatible] }
+        auth_type: { type: string, enum: [api_key, bearer_token, none] }
+        base_url: { type: string, format: uri, maxLength: 2048 }
+        timeout_ms: { type: integer, minimum: 1000, maximum: 3600000 }
+        adapter_config:
+          type: object
+          additionalProperties: false
+          properties:
+            wire_api: { type: string, enum: [chat_completions, responses] }
+            auth_header_mode: { type: string, enum: [authorization_bearer, x_api_key] }
+        credential:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 5120
+        version: { type: integer, const: 0 }
+    ProviderUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [name, base_url, timeout_ms, adapter_config, version]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        base_url: { type: string, format: uri, maxLength: 2048 }
+        timeout_ms: { type: integer, minimum: 1000, maximum: 3600000 }
+        adapter_config:
+          type: object
+          additionalProperties: false
+          properties:
+            wire_api: { type: string, enum: [chat_completions, responses] }
+            auth_header_mode: { type: string, enum: [authorization_bearer, x_api_key] }
+        credential:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 5120
+        version: { type: integer, minimum: 1 }
+    ProviderPage:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Provider' }
+        next_cursor: { type: string, minLength: 1, maxLength: 64 }
+    ProviderTestResult:
+      type: object
+      additionalProperties: false
+      required: [success, code, message, http_status, retryable]
+      properties:
+        success: { type: boolean }
+        code: { type: string, maxLength: 128 }
+        message: { type: string, maxLength: 2000 }
+        http_status: { type: integer, minimum: 0, maximum: 599 }
+        retryable: { type: boolean }
+    SyncModelsResult:
+      type: object
+      additionalProperties: false
+      required: [discovered]
+      properties:
+        discovered: { type: integer, minimum: 0 }
+    ManageableModelStatus:
+      type: string
+      enum: [available, degraded, missing_upstream, disabled]
+    ModelCapabilities:
+      type: object
+      additionalProperties: false
+      required: [streaming, tools, parallel_tools, reasoning, thinking, vision]
+      properties:
+        streaming: { type: boolean }
+        tools: { type: boolean }
+        parallel_tools: { type: boolean }
+        reasoning: { type: boolean }
+        thinking: { type: boolean }
+        vision: { type: boolean }
+    Model:
+      type: object
+      additionalProperties: false
+      required: [id, provider_id, upstream_model_id, public_model_id, display_name, source, lifecycle_status, enabled, capabilities, capability_source, capability_override_json, version]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 64 }
+        provider_id: { type: string, minLength: 1, maxLength: 64 }
+        upstream_model_id: { type: string, minLength: 1, maxLength: 255 }
+        public_model_id: { type: string, minLength: 3, maxLength: 304 }
+        display_name: { type: string, minLength: 1, maxLength: 255 }
+        source: { type: string, enum: [upstream, adapter_default, manual, oauth] }
+        lifecycle_status: { $ref: '#/components/schemas/ManageableModelStatus' }
+        enabled: { type: boolean }
+        capabilities: { $ref: '#/components/schemas/ModelCapabilities' }
+        context_window_tokens: { type: integer, minimum: 1 }
+        max_output_tokens: { type: integer, minimum: 1 }
+        capability_source: { type: string, minLength: 1, maxLength: 128 }
+        capability_override_json:
+          type: object
+          additionalProperties: true
+        version: { type: integer, minimum: 1 }
+    ModelPage:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Model' }
+        next_cursor: { type: string, minLength: 1, maxLength: 64 }
+    VersionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1 }
+    ControlPlaneError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: { type: string, minLength: 1, maxLength: 128 }
+            message: { type: string, minLength: 1, maxLength: 2000 }

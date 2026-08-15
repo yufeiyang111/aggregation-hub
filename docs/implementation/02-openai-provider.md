@@ -30,10 +30,10 @@
 - Produces: `NormalizedRequest`、`NormalizedResponse`、`NormalizedEvent`、`StreamEmitter`。
 - Consumes: Provider Capabilities。
 
-- [ ] Write failing tests for System separation、Tool schema depth、invalid tool result ID、single terminal event。
-- [ ] Define explicit union types: TextPart、ReasoningPart、ToolCallPart、ToolResultPart；禁止主路径 `map[string]any`。
-- [ ] Implement validation with configurable size/depth limits and required capability extraction。
-- [ ] Implement event sequence validator: one response_start, zero/many deltas, exactly one response_end/error。
+- [x] Write failing tests for System separation、Tool schema depth、invalid tool result ID、single terminal event。
+- [x] Define explicit union types: TextPart、ReasoningPart、ToolCallPart、ToolResultPart；禁止主路径 `map[string]any`。
+- [x] Implement validation with configurable size/depth limits and required capability extraction。
+- [x] Implement event sequence validator: one response_start, zero/many deltas, exactly one response_end/error。
 - [ ] Run:
 
 ```powershell
@@ -42,7 +42,7 @@ go test ./internal/normalize -v -race
 go test ./...
 ```
 
-Expected: PASS。Suggested commit: `feat(core): define normalized protocol contract`。
+当前验证：`go test ./internal/normalize -v`、`go vet ./internal/normalize` 与 `go test ./...` 已通过；`-race` 因本机 Go Windows race linker 自身报错暂未通过，详见任务报告。Suggested commit: `feat(core): define normalized protocol contract`。
 
 ---
 
@@ -59,13 +59,13 @@ Expected: PASS。Suggested commit: `feat(core): define normalized protocol contr
 - Produces: `Adapter` interface、`Registry.Register/Create`、OpenAI Config Schema。
 - Consumes: Normalized Contract、Transport、Credential。
 
-- [ ] Write registry tests: duplicate type rejected、unknown type typed error、factory creates independent adapter。
-- [ ] Implement interface signatures from `docs/06-provider-adapter-design.md`。
-- [ ] Define OpenAI config: `wire_api` enum `chat_completions|responses`、chat/models paths、auth header mode；secret fields prohibited in config JSON。
-- [ ] Register `openai-compatible` and `local-openai-compatible` with different NetworkPolicy。
+- [x] Write registry tests: duplicate type rejected、unknown type typed error、factory creates independent adapter。
+- [x] Implement interface signatures from `docs/06-provider-adapter-design.md`。
+- [x] Define OpenAI config: `wire_api` enum `chat_completions|responses`、chat/models paths、auth header mode；secret fields prohibited in config JSON。
+- [x] Register `openai-compatible` and `local-openai-compatible` with different NetworkPolicy。
 - [ ] Run `go test ./internal/adapter/... -v -race`。Expected PASS。
 
-Suggested commit: `feat(core): add adapter registry and OpenAI configuration`。
+当前验证：`go test ./internal/adapter/... -v`、`go vet ./internal/adapter/...` 与 `go test ./...` 已通过；`-race` 因本机 Go Windows race linker 自身报错暂未通过，详见任务报告。Suggested commit: `feat(core): add adapter registry and OpenAI configuration`。
 
 ---
 
@@ -110,9 +110,9 @@ Suggested commit: `feat(api): add OpenAI chat completions ingress`。
 - Consumes: Transport、Credential、Normalized Contract。
 
 - [ ] Build Fake Upstream fixtures for non-stream text/tool、SSE text/tool argument arbitrary chunks、usage、401/429/500/truncated。
-- [ ] First run adapter contract and expect FAIL due absent implementation。
-- [ ] Implement request URL with structured Resolve；apply Credential；protected Header cannot be overridden；set upstream model ID。
-- [ ] Implement bounded SSE parser supporting multi-line data and chunk boundaries。
+- [x] First run adapter contract and expect FAIL due absent implementation。
+- [x] Implement request URL with structured Resolve；apply Credential；protected Header cannot be overridden；set upstream model ID。
+- [x] Implement bounded SSE parser supporting multi-line data and chunk boundaries。
 - [ ] Emit NormalizedEvents with tool argument deltas and one terminal event；usage unknown remains nil。
 - [ ] Verify client cancellation closes upstream and no retry after first emitted byte。
 - [ ] Run:
@@ -145,11 +145,13 @@ Expected PASS。Suggested commit: `feat(adapter): proxy OpenAI chat streams and 
 - Produces: Provider CRUD/test/sync、Models list/enable/disable UI。
 - Consumes: Control Plane、Zod、React Query。
 
-- [ ] Add OpenAPI schemas with credential input-only and masked response；run contract check expecting generated/type drift failure。
-- [ ] Implement explicit Tauri commands and `controlClient` methods, not generic arbitrary URL proxy。
+- [x] Add OpenAPI schemas with credential input-only and masked response；run contract check expecting generated/type drift failure。
+- [x] Implement explicit Tauri commands and `controlClient` methods, not generic arbitrary URL proxy。
 - [ ] Write ProviderWizard tests: required fields、invalid slug/base URL、duplicate submit blocked、masked credential not resubmitted、test failure actionable。
 - [ ] Implement wizard steps and model selection；new synced models default disabled。
-- [ ] Implement list loading/empty/error/success、filter、pagination、enable confirmations。
+- [x] Implement list loading/empty/error/success、filter、pagination、enable confirmations。
+当前进度：Core 已实现同步模型默认禁用、模型控制面列表/筛选/分页以及乐观锁启用/禁用；Data Plane `GET /v1/models` 仅暴露 Provider 与模型均可路由的已启用模型。桌面端已通过受限 Tauri Commands 提供 OpenAI 兼容服务创建、测试、同步、服务启停、删除确认和模型启停；删除命令只允许固定 Control Plane 路径与版本号，不开放通用管理代理，创建表单不会把凭据写入浏览器存储。Provider 编辑、凭据替换/轮换、模型能力覆盖和真实客户端联调仍未实现。
+
 - [ ] Run:
 
 ```powershell
@@ -178,6 +180,8 @@ Expected PASS。Suggested commit: `feat(desktop): manage OpenAI providers and mo
 - Consumes: built Core、Local Key、Provider control API。
 
 - [ ] `chat-proxy.ps1` starts Core with temp data/MemoryStore test mode、creates local key/provider/model through Control Plane、runs non-stream/text/tool/cancel、then checks SQLite/logs for sentinel secret absence。
+
+当前验证：`apps/core/cmd/aggregation-hub-core/main_test.go` 的 `TestCoreOpenAICompatibleLocalProviderEndToEnd` 已通过真实 Core 进程与 `httptest` Local OpenAI Compatible Fake Provider 验证：模型同步与启用、受 Local Access Key 保护的模型列表、非流式文本、SSE 文本、非流式 Tool、SSE Tool arguments 分片，以及下游关闭响应 Body 后上游请求 Context 取消。该结果仅为 L2（真实 Core + Fake Provider）；独立 PowerShell E2E 脚本、SQLite/日志 Sentinel 扫描和真实 Provider L3 尚未完成。
 - [ ] Run L2 script and expect all assertions PASS。
 - [ ] `openai-compatible-smoke.ps1` accepts secrets only via process environment `AH_TEST_BASE_URL`/`AH_TEST_API_KEY`/`AH_TEST_MODEL`; it refuses to run if any missing and never echoes them。
 - [ ] Run L3 only in controlled local environment；capture date、provider label、model、commands、HTTP status、stream/tool result and redaction scan in a local untracked evidence file。
@@ -201,3 +205,6 @@ Suggested commit: `test: add OpenAI-compatible end-to-end coverage`。
 - [ ] 同名模型命名空间隔离通过。
 - [ ] 日志/DB/诊断秘密哨兵扫描通过。
 - [ ] 至少 L2；发布稳定前达到真实 Provider L3。
+
+
+

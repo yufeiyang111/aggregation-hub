@@ -24,30 +24,36 @@ type RuntimeStatus struct {
 type RuntimeSource func() RuntimeStatus
 
 type Server struct {
-	managementToken []byte
-	runtime         RuntimeSource
-	shutdown        func(context.Context) error
-	providerService ProviderService
-	providerReader  ProviderReader
-	localKeyService LocalKeyService
-	shutdownOnce    sync.Once
-	shutdownError   error
+	managementToken    []byte
+	runtime            RuntimeSource
+	shutdown           func(context.Context) error
+	providerService    ProviderService
+	providerReader     ProviderReader
+	localKeyService    LocalKeyService
+	providerOperations ProviderOperations
+	modelService       ModelService
+	modelReader        ModelReader
+	shutdownOnce       sync.Once
+	shutdownError      error
 }
 
 type Options struct {
-	ManagementToken string
-	Runtime         RuntimeSource
-	Shutdown        func(context.Context) error
-	ProviderService ProviderService
-	ProviderReader  ProviderReader
-	LocalKeyService LocalKeyService
+	ManagementToken    string
+	Runtime            RuntimeSource
+	Shutdown           func(context.Context) error
+	ProviderService    ProviderService
+	ProviderReader     ProviderReader
+	LocalKeyService    LocalKeyService
+	ProviderOperations ProviderOperations
+	ModelService       ModelService
+	ModelReader        ModelReader
 }
 
 func NewServer(options Options) (*Server, error) {
 	if len(options.ManagementToken) < 32 || options.Runtime == nil || options.Shutdown == nil {
 		return nil, errors.New("Control Plane 依赖无效")
 	}
-	return &Server{managementToken: []byte(options.ManagementToken), runtime: options.Runtime, shutdown: options.Shutdown, providerService: options.ProviderService, providerReader: options.ProviderReader, localKeyService: options.LocalKeyService}, nil
+	return &Server{managementToken: []byte(options.ManagementToken), runtime: options.Runtime, shutdown: options.Shutdown, providerService: options.ProviderService, providerReader: options.ProviderReader, localKeyService: options.LocalKeyService, providerOperations: options.ProviderOperations, modelService: options.ModelService, modelReader: options.ModelReader}, nil
 }
 
 func (server *Server) Handler() http.Handler {
@@ -56,9 +62,15 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("POST /internal/v1/runtime/shutdown", server.requireToken(http.HandlerFunc(server.handleShutdown)))
 	if server.providerService != nil && server.providerReader != nil {
 		server.registerProviderRoutes(mux)
+		if server.providerOperations != nil {
+			server.registerProviderOperationRoutes(mux)
+		}
 	}
 	if server.localKeyService != nil {
 		server.registerLocalKeyRoutes(mux)
+	}
+	if server.modelService != nil && server.modelReader != nil {
+		server.registerModelRoutes(mux)
 	}
 	return mux
 }

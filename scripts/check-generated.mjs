@@ -48,6 +48,32 @@ function assertStringUnionType(schema, source) {
   );
 }
 
+function isSafeCredentialSchema(key, child) {
+  if (key !== 'credential' || child === null || typeof child !== 'object' || Array.isArray(child)) {
+    return false;
+  }
+  if (child.writeOnly === true) {
+    return child.type === 'string'
+      && child.minLength === 1
+      && Number.isInteger(child.maxLength)
+      && child.maxLength > 0
+      && child.maxLength <= 5120
+      && !Object.hasOwn(child, 'default')
+      && !Object.hasOwn(child, 'example')
+      && !Object.hasOwn(child, 'examples');
+  }
+  if (child.readOnly === true) {
+    return child.type === 'object'
+      && child.additionalProperties === false
+      && Array.isArray(child.required)
+      && child.required.length === 1
+      && child.required[0] === 'configured'
+      && child.properties?.configured?.type === 'boolean'
+      && child.properties?.masked_hint?.type === 'string';
+  }
+  return false;
+}
+
 function assertNoSensitivePropertyNames(value, source = 'OpenAPI') {
   if (Array.isArray(value)) {
     value.forEach((item, index) => assertNoSensitivePropertyNames(item, `${source}[${index}]`));
@@ -58,7 +84,7 @@ function assertNoSensitivePropertyNames(value, source = 'OpenAPI') {
   }
 
   for (const [key, child] of Object.entries(value)) {
-    assertCondition(!SENSITIVE_PROPERTY_NAME.test(key), `${source} 含有不应出现在控制面契约中的敏感字段：${key}`);
+    assertCondition(!SENSITIVE_PROPERTY_NAME.test(key) || isSafeCredentialSchema(key, child), `${source} 含有不应出现在控制面契约中的敏感字段：${key}`);
     assertNoSensitivePropertyNames(child, `${source}.${key}`);
   }
 }
@@ -251,6 +277,10 @@ function main() {
     const invalidOpenApi = JSON.parse(JSON.stringify(openapiDocument));
     invalidOpenApi.components.schemas.RuntimeStatus.properties.state.enum = ['booted'];
     expectFailure('非法 OpenAPI state enum', () => assertOpenApiContract(invalidOpenApi), 'RuntimeStatus.state.enum');
+
+    const unsafeCredentialSchema = JSON.parse(JSON.stringify(openapiDocument));
+    unsafeCredentialSchema.components.schemas.ProviderCreateInput.properties.credential = { type: 'string' };
+    expectFailure('非受限凭据字段', () => assertOpenApiContract(unsafeCredentialSchema), '敏感字段：credential');
 
     console.log('[self-test] state、端口、时间、last_error、额外字段和 OpenAPI enum 均被拒绝。');
   }

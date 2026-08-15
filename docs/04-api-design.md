@@ -189,6 +189,8 @@ POST /internal/v1/providers/{id}/sync-models
 
 当前 Core 已实现 Provider 的列表、创建、读取、更新、启用、禁用和删除路由。写入请求仅接受显式 JSON DTO，最大 64 KiB，拒绝未知字段；更新、启用、禁用与删除都必须携带 `version`，版本冲突返回 `409 stale_resource`。响应不返回 CredentialStore 引用或完整凭据。
 
+当前桌面端以显式 Tauri Commands 间接调用上述 Provider 创建、测试、同步和启停路由；WebView 不持有管理令牌，也不能提交任意路径或任意 Control Plane 请求。创建表单中的凭据只在提交期间短暂保留，随后清空，不写入浏览器存储。
+
 当前 Core 还实现 `POST /internal/v1/local-keys`：请求体为 `name` 和可选 `expires_at`，成功时以 `201` 返回唯一一次包含完整 `key` 的响应及 `display_once: true`。完整值不写入 SQLite、ready 事件或日志。当前桌面端已经通过 `create_local_key` Tauri Command 提供一次性展示与复制；`GET /internal/v1/local-keys`、吊销和完整管理页保留给后续任务。
 ### Models
 
@@ -202,6 +204,10 @@ POST /internal/v1/models/{id}/test
 ```
 
 列表支持 Provider、状态、能力、搜索和分页；page_size 默认 50、最大 200。
+
+#### 当前实现边界
+
+当前 Core 已实现模型目录的 `GET /internal/v1/models`，支持 `provider_id`、`lifecycle_status`、`enabled`、`capability`、`search` 和游标分页；以及 `POST /internal/v1/models/{id}/enable`、`POST /internal/v1/models/{id}/disable`。启停必须携带 `version`，冲突返回 `409 stale_resource`。新同步的模型默认禁用；只有状态为 `available` 或 `degraded` 的模型可以启用。模型目录响应不包含任何 Provider 凭据或 CredentialStore 引用。
 
 ### OAuth、Keys、Requests
 

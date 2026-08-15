@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aggregationhub.local/contracts/normalized-event.schema.json",
+  "title": "Aggregation Hub Normalized Stream Event",
+  "oneOf": [
+    { "$ref": "#/$defs/responseStart" },
+    { "$ref": "#/$defs/contentStart" },
+    { "$ref": "#/$defs/textDelta" },
+    { "$ref": "#/$defs/reasoningDelta" },
+    { "$ref": "#/$defs/toolCallStart" },
+    { "$ref": "#/$defs/toolCallArgumentsDelta" },
+    { "$ref": "#/$defs/contentEnd" },
+    { "$ref": "#/$defs/usageUpdate" },
+    { "$ref": "#/$defs/responseEnd" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "base": { "type": "object", "required": ["type"] },
+    "responseStart": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "response_start" }, "response_id": { "type": "string", "minLength": 1 }, "model": { "type": "string", "minLength": 1 } }, "required": ["response_id", "model"] }] },
+    "contentStart": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "content_start" }, "content_id": { "type": "string", "minLength": 1 }, "kind": { "enum": ["text", "image", "reasoning", "tool_call", "tool_result"] } }, "required": ["content_id", "kind"] }] },
+    "textDelta": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "text_delta" }, "content_id": { "type": "string", "minLength": 1 }, "text": { "type": "string" } }, "required": ["content_id", "text"] }] },
+    "reasoningDelta": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "reasoning_delta" }, "content_id": { "type": "string", "minLength": 1 }, "text": { "type": "string" } }, "required": ["content_id", "text"] }] },
+    "toolCallStart": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "tool_call_start" }, "content_id": { "type": "string", "minLength": 1 }, "call_id": { "type": "string", "minLength": 1 }, "name": { "type": "string", "minLength": 1 } }, "required": ["content_id", "call_id", "name"] }] },
+    "toolCallArgumentsDelta": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "tool_call_arguments_delta" }, "content_id": { "type": "string", "minLength": 1 }, "call_id": { "type": "string", "minLength": 1 }, "delta": { "type": "string" } }, "required": ["content_id", "call_id", "delta"] }] },
+    "contentEnd": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "content_end" }, "content_id": { "type": "string", "minLength": 1 } }, "required": ["content_id"] }] },
+    "usageUpdate": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "usage_update" }, "usage": { "type": "object" } }, "required": ["usage"] }] },
+    "responseEnd": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "response_end" }, "finish_reason": { "type": "string", "minLength": 1 } }, "required": ["finish_reason"] }] },
+    "error": { "allOf": [{ "$ref": "#/$defs/base" }, { "properties": { "type": { "const": "error" }, "code": { "type": "string", "minLength": 1 }, "message": { "type": "string", "minLength": 1 } }, "required": ["code", "message"] }] }
+  }
+}
+

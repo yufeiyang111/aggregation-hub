@@ -1,4 +1,7 @@
-use crate::core_process::{ReadyEvent, RuntimeLifecycle, RuntimeState};
+use crate::core_process::{
+    build_model_list_path, validate_create_provider, CreateProviderInput, ModelListQuery,
+    ReadyEvent, RuntimeLifecycle, RuntimeState,
+};
 
 fn ready_event() -> ReadyEvent {
     ReadyEvent {
@@ -78,4 +81,55 @@ fn lifecycle_rejects_non_loopback_ready_urls() {
 
     assert_eq!(error, "Core ready 事件无效");
     assert_eq!(lifecycle.snapshot().state, RuntimeState::Starting);
+}
+
+#[test]
+fn model_query_builder_uses_only_typed_safe_parameters() {
+    let path = build_model_list_path(&ModelListQuery {
+        page_size: Some(50),
+        enabled: Some(false),
+        capability: Some("tools".to_owned()),
+        search: Some("GPT 4/工具".to_owned()),
+        ..ModelListQuery::default()
+    })
+    .expect("模型查询应可构建");
+    assert_eq!(
+        path,
+        "/internal/v1/models?page_size=50&enabled=false&capability=tools&search=GPT%204%2F%E5%B7%A5%E5%85%B7"
+    );
+    assert!(build_model_list_path(&ModelListQuery {
+        capability: Some("raw_sql".to_owned()),
+        ..ModelListQuery::default()
+    })
+    .is_err());
+    assert!(build_model_list_path(&ModelListQuery {
+        search: Some(" bad".to_owned()),
+        ..ModelListQuery::default()
+    })
+    .is_err());
+}
+
+#[test]
+fn provider_create_input_rejects_invalid_slug_and_missing_credential() {
+    let valid = CreateProviderInput {
+        slug: "provider-a".to_owned(),
+        name: "Provider A".to_owned(),
+        adapter_type: "openai-compatible".to_owned(),
+        auth_type: "api_key".to_owned(),
+        auth_header_mode: "authorization_bearer".to_owned(),
+        base_url: "https://example.test".to_owned(),
+        credential: Some("test-only-value".to_owned()),
+    };
+    assert!(validate_create_provider(&valid).is_ok());
+
+    let invalid_slug = CreateProviderInput {
+        slug: "Invalid".to_owned(),
+        ..valid.clone()
+    };
+    assert!(validate_create_provider(&invalid_slug).is_err());
+    let missing_credential = CreateProviderInput {
+        credential: None,
+        ..valid
+    };
+    assert!(validate_create_provider(&missing_credential).is_err());
 }

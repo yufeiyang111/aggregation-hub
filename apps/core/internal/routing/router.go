@@ -55,7 +55,7 @@ func (router *Router) Resolve(ctx context.Context, publicModelID string, require
 	if err := capabilities.Validate(required); err != nil {
 		return RoutePlan{}, err
 	}
-	plan := RoutePlan{ProviderID: value.ID, ProviderSlug: value.Slug, AdapterType: value.AdapterType, BaseURL: value.BaseURL, UpstreamModelID: model.UpstreamModelID, Capabilities: capabilities, Timeout: value.Timeout}
+	plan := RoutePlan{ProviderID: value.ID, ProviderSlug: value.Slug, AdapterType: value.AdapterType, AuthType: value.AuthType, BaseURL: value.BaseURL, UpstreamModelID: model.UpstreamModelID, Capabilities: capabilities, AdapterConfigJSON: append([]byte(nil), value.AdapterConfigJSON...), Timeout: value.Timeout}
 	if value.CredentialRef != nil {
 		ref := *value.CredentialRef
 		plan.CredentialRef = &ref

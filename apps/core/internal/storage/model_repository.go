@@ -26,6 +26,23 @@ func NewModelRepository(database *sql.DB) (*ModelRepository, error) {
 	return &ModelRepository{database: database}, nil
 }
 
+func (repository *ModelRepository) FindByID(ctx context.Context, modelID string) (provider.ProviderModel, error) {
+	if ctx == nil {
+		return provider.ProviderModel{}, errors.New("读取模型的上下文不能为空")
+	}
+	if !validModelID(modelID) {
+		return provider.ProviderModel{}, provider.ErrModelNotFound
+	}
+	value, err := scanProviderModel(repository.database.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM provider_models WHERE id=? AND deleted_at IS NULL`, modelID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return provider.ProviderModel{}, provider.ErrModelNotFound
+	}
+	if err != nil {
+		return provider.ProviderModel{}, err
+	}
+	return value, nil
+}
+
 func (repository *ModelRepository) FindByPublicID(ctx context.Context, publicModelID string) (provider.ProviderModel, error) {
 	if ctx == nil {
 		return provider.ProviderModel{}, errors.New("读取模型的上下文不能为空")
@@ -227,4 +244,188 @@ func nullableInt64(value *int64) any {
 		return nil
 	}
 	return *value
+}
+
+func (repository *ModelRepository) List(ctx context.Context, query provider.ModelPageQuery) (provider.ModelPage, error) {
+	if ctx == nil {
+		return provider.ModelPage{}, errors.New("列出模型的上下文不能为空")
+	}
+	pageSize, err := normalizedPageSize(query.PageSize)
+	if err != nil {
+		return provider.ModelPage{}, err
+	}
+	if err := validateModelPageQuery(query); err != nil {
+		return provider.ModelPage{}, err
+	}
+
+	conditions := []string{"deleted_at IS NULL", "id>?"}
+	arguments := []any{query.Cursor}
+	if query.ProviderID != "" {
+		conditions = append(conditions, "provider_id=?")
+		arguments = append(arguments, query.ProviderID)
+	}
+	if query.LifecycleStatus != "" {
+		conditions = append(conditions, "lifecycle_status=?")
+		arguments = append(arguments, query.LifecycleStatus)
+	}
+	if query.Enabled != nil {
+		conditions = append(conditions, "enabled=?")
+		arguments = append(arguments, boolInteger(*query.Enabled))
+	}
+	if query.Capability != "" {
+		conditions = append(conditions, modelCapabilityColumn(query.Capability)+"=1")
+	}
+	if query.Search != "" {
+		conditions = append(conditions, "(public_model_id LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')")
+		pattern := "%" + escapeLike(query.Search) + "%"
+		arguments = append(arguments, pattern, pattern)
+	}
+	arguments = append(arguments, pageSize+1)
+	rows, err := repository.database.QueryContext(ctx, "SELECT "+modelColumns+" FROM provider_models WHERE "+strings.Join(conditions, " AND ")+" ORDER BY id ASC LIMIT ?", arguments...)
+	if err != nil {
+		return provider.ModelPage{}, fmt.Errorf("列出模型失败: %w", err)
+	}
+	defer rows.Close()
+	page := provider.ModelPage{Items: make([]provider.ProviderModel, 0, pageSize)}
+	for rows.Next() {
+		value, err := scanProviderModel(rows)
+		if err != nil {
+			return provider.ModelPage{}, err
+		}
+		page.Items = append(page.Items, value)
+	}
+	if err := rows.Err(); err != nil {
+		return provider.ModelPage{}, fmt.Errorf("遍历模型列表失败: %w", err)
+	}
+	if len(page.Items) > pageSize {
+		page.NextCursor = page.Items[pageSize-1].ID
+		page.Items = page.Items[:pageSize]
+	}
+	return page, nil
+}
+
+func (repository *ModelRepository) SetEnabled(ctx context.Context, modelID string, expectedVersion int64, enabled bool, audit provider.AuditEvent) (provider.ProviderModel, error) {
+	if ctx == nil {
+		return provider.ProviderModel{}, errors.New("设置模型启用状态的上下文不能为空")
+	}
+	if !validModelID(modelID) || expectedVersion < 1 {
+		return provider.ProviderModel{}, provider.ErrStaleResource
+	}
+	if err := validateAuditEvent(audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	transaction, err := repository.database.BeginTx(ctx, nil)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("开始设置模型状态事务失败: %w", err)
+	}
+	defer transaction.Rollback()
+	current, err := scanProviderModel(transaction.QueryRowContext(ctx, `SELECT `+modelColumns+` FROM provider_models WHERE id=? AND deleted_at IS NULL`, modelID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return provider.ProviderModel{}, provider.ErrModelNotFound
+	}
+	if err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if current.Version != expectedVersion {
+		return provider.ProviderModel{}, provider.ErrStaleResource
+	}
+	if enabled && current.LifecycleStatus != provider.ModelStatusAvailable && current.LifecycleStatus != provider.ModelStatusDegraded {
+		return provider.ProviderModel{}, provider.ErrInvalidModel
+	}
+	result, err := transaction.ExecContext(ctx, `UPDATE provider_models SET enabled=?,version=version+1,updated_at=? WHERE id=? AND version=? AND deleted_at IS NULL`, boolInteger(enabled), audit.CreatedAt.UTC().UnixMilli(), modelID, expectedVersion)
+	if err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("设置模型启用状态失败: %w", err)
+	}
+	if err := requireUpdatedModel(ctx, transaction, result, modelID); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if err := insertAuditEvent(ctx, transaction, audit); err != nil {
+		return provider.ProviderModel{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return provider.ProviderModel{}, fmt.Errorf("提交模型状态事务失败: %w", err)
+	}
+	return repository.FindByID(ctx, modelID)
+}
+
+func validateModelPageQuery(query provider.ModelPageQuery) error {
+	if len(query.Cursor) > 64 || (query.Cursor != "" && !validModelID(query.Cursor)) || len(query.ProviderID) > 64 || (query.ProviderID != "" && strings.TrimSpace(query.ProviderID) != query.ProviderID) || len(query.Search) > 128 || strings.TrimSpace(query.Search) != query.Search {
+		return provider.ErrInvalidModel
+	}
+	if query.LifecycleStatus != "" && query.LifecycleStatus != provider.ModelStatusAvailable && query.LifecycleStatus != provider.ModelStatusDegraded && query.LifecycleStatus != provider.ModelStatusMissingUpstream && query.LifecycleStatus != provider.ModelStatusDisabled {
+		return provider.ErrInvalidModel
+	}
+	if query.Capability != "" && modelCapabilityColumn(query.Capability) == "" {
+		return provider.ErrInvalidModel
+	}
+	return nil
+}
+
+func modelCapabilityColumn(capability string) string {
+	switch capability {
+	case "streaming":
+		return "supports_streaming"
+	case "tools":
+		return "supports_tools"
+	case "parallel_tools":
+		return "supports_parallel_tools"
+	case "reasoning":
+		return "supports_reasoning"
+	case "thinking":
+		return "supports_thinking"
+	case "vision":
+		return "supports_vision"
+	default:
+		return ""
+	}
+}
+
+func escapeLike(value string) string {
+	replacer := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_")
+	return replacer.Replace(value)
+}
+
+func validModelID(value string) bool {
+	return strings.TrimSpace(value) == value && value != "" && len(value) <= 64
+}
+
+func requireUpdatedModel(ctx context.Context, transaction *sql.Tx, result sql.Result, modelID string) error {
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("读取模型更新结果失败: %w", err)
+	}
+	if affected == 1 {
+		return nil
+	}
+	var exists int
+	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*) FROM provider_models WHERE id=? AND deleted_at IS NULL`, modelID).Scan(&exists); err != nil {
+		return fmt.Errorf("确认模型更新冲突失败: %w", err)
+	}
+	if exists == 0 {
+		return provider.ErrModelNotFound
+	}
+	return provider.ErrStaleResource
+}
+
+func (repository *ModelRepository) ListPublic(ctx context.Context) ([]provider.PublicModel, error) {
+	if ctx == nil {
+		return nil, errors.New("列出公开模型的上下文不能为空")
+	}
+	rows, err := repository.database.QueryContext(ctx, `SELECT m.public_model_id,p.slug FROM provider_models m JOIN providers p ON p.id=m.provider_id WHERE m.deleted_at IS NULL AND m.enabled=1 AND m.lifecycle_status IN ('available','degraded') AND p.deleted_at IS NULL AND p.enabled=1 AND p.lifecycle_status IN ('enabled','degraded') ORDER BY m.public_model_id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("列出公开模型失败: %w", err)
+	}
+	defer rows.Close()
+	result := make([]provider.PublicModel, 0)
+	for rows.Next() {
+		var value provider.PublicModel
+		if err := rows.Scan(&value.ID, &value.Owner); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

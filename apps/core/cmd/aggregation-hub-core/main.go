@@ -14,16 +14,23 @@ import (
 	"sync/atomic"
 	"time"
 
+	"aggregationhub.local/core/internal/adapter"
+	openaiadapter "aggregationhub.local/core/internal/adapter/openai"
 	"aggregationhub.local/core/internal/bootstrap"
 	"aggregationhub.local/core/internal/config"
 	"aggregationhub.local/core/internal/controlplane"
 	"aggregationhub.local/core/internal/credential"
 	"aggregationhub.local/core/internal/dataplane"
+	"aggregationhub.local/core/internal/gateway"
 	"aggregationhub.local/core/internal/health"
+	openaiingress "aggregationhub.local/core/internal/ingress/openai_chat"
+	"aggregationhub.local/core/internal/management"
 	"aggregationhub.local/core/internal/observability"
 	"aggregationhub.local/core/internal/provider"
+	"aggregationhub.local/core/internal/routing"
 	"aggregationhub.local/core/internal/security"
 	"aggregationhub.local/core/internal/storage"
+	"aggregationhub.local/core/internal/transport"
 	"aggregationhub.local/core/migrations"
 )
 
@@ -68,9 +75,45 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("Provider 仓储初始化失败")
 		return 1
 	}
-	providerService, err := provider.NewService(providerRepository, credential.NewWindowsStore(), provider.ServiceOptions{})
+	credentialStore := credential.NewWindowsStore()
+	providerService, err := provider.NewService(providerRepository, credentialStore, provider.ServiceOptions{})
 	if err != nil {
 		logger.Print("Provider 服务初始化失败")
+		return 1
+	}
+	modelRepository, err := storage.NewModelRepository(database)
+	if err != nil {
+		logger.Print("模型仓储初始化失败")
+		return 1
+	}
+	modelService, err := provider.NewModelService(modelRepository, provider.ModelServiceOptions{})
+	if err != nil {
+		logger.Print("模型服务初始化失败")
+		return 1
+	}
+	router, err := routing.New(providerRepository, modelRepository)
+	if err != nil {
+		logger.Print("模型路由初始化失败")
+		return 1
+	}
+	registry := adapter.NewRegistry()
+	if err := openaiadapter.Register(registry); err != nil {
+		logger.Print("OpenAI Adapter 注册失败")
+		return 1
+	}
+	gate, err := gateway.New(router, credentialStore, registry, transport.NewFactory(security.NetworkPolicy{}, transport.Options{}))
+	if err != nil {
+		logger.Print("Gateway 初始化失败")
+		return 1
+	}
+	providerOperations, err := management.NewProviderOperations(providerRepository, modelRepository, credentialStore, registry, transport.NewFactory(security.NetworkPolicy{}, transport.Options{}))
+	if err != nil {
+		logger.Print("Provider 操作服务初始化失败")
+		return 1
+	}
+	chatHandler, err := openaiingress.NewHandler(gate)
+	if err != nil {
+		logger.Print("Chat 入口初始化失败")
 		return 1
 	}
 	dataListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.LoopbackHost, cfg.ListenPort))
@@ -89,6 +132,8 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 	controlPort := controlListener.Addr().(*net.TCPAddr).Port
 	ready := bootstrap.ReadyEvent{Event: "ready", ControlURL: fmt.Sprintf("http://%s:%d", config.LoopbackHost, controlPort), DataPlaneURL: fmt.Sprintf("http://%s:%d", config.LoopbackHost, dataListener.Addr().(*net.TCPAddr).Port), PID: os.Getpid()}
 	protectedDataPlane := http.NewServeMux()
+	protectedDataPlane.Handle("POST /v1/chat/completions", chatHandler)
+	protectedDataPlane.Handle("GET /v1/models", dataplane.NewModelsHandler(modelRepository))
 	dataRouter := dataplane.NewRouter(health.NewHandler(cfg.Version), protectedDataPlane, localKeyService)
 	dataServer := dataplane.NewServer(cfg, dataRouter)
 	var shutdownRequested atomic.Bool
@@ -98,9 +143,12 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		Runtime: func() controlplane.RuntimeStatus {
 			return controlplane.RuntimeStatus{State: "running", DataPlaneURL: ready.DataPlaneURL, StartedAt: startedAt.Format(time.RFC3339Nano), Version: cfg.Version, LastError: nil}
 		},
-		ProviderService: providerService,
-		ProviderReader:  providerRepository,
-		LocalKeyService: localKeyService,
+		ProviderService:    providerService,
+		ProviderReader:     providerRepository,
+		ProviderOperations: providerOperations,
+		ModelService:       modelService,
+		ModelReader:        modelRepository,
+		LocalKeyService:    localKeyService,
 		Shutdown: func(ctx context.Context) error {
 			shutdownRequested.Store(true)
 			go func() {

@@ -2,7 +2,7 @@
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::control_client;
 use tauri::{AppHandle, Manager};
@@ -56,10 +56,124 @@ pub struct ProviderSummary {
     pub version: i64,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateProviderInput {
+    pub slug: String,
+    pub name: String,
+    pub adapter_type: String,
+    pub auth_type: String,
+    pub auth_header_mode: String,
+    pub base_url: String,
+    pub credential: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ProviderCreateRequest {
+    slug: String,
+    name: String,
+    adapter_type: String,
+    auth_type: String,
+    base_url: String,
+    timeout_ms: i64,
+    adapter_config: AdapterConfig,
+    credential: Option<EphemeralSecret>,
+    version: i64,
+}
+
+struct EphemeralSecret(Vec<u8>);
+
+impl EphemeralSecret {
+    fn from_string(value: String) -> Self {
+        Self(value.into_bytes())
+    }
+}
+
+impl Serialize for EphemeralSecret {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let value = std::str::from_utf8(&self.0).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(value)
+    }
+}
+
+impl Drop for EphemeralSecret {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
+}
+
+#[derive(Serialize)]
+struct AdapterConfig {
+    wire_api: &'static str,
+    auth_header_mode: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProviderTestResult {
+    pub success: bool,
+    pub code: String,
+    pub message: String,
+    pub http_status: i64,
+    pub retryable: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SyncModelsResult {
+    pub discovered: i64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct DashboardSnapshot {
     pub runtime: RuntimeSnapshot,
     pub providers: Vec<ProviderSummary>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelCapabilities {
+    pub streaming: bool,
+    pub tools: bool,
+    pub parallel_tools: bool,
+    pub reasoning: bool,
+    pub thinking: bool,
+    pub vision: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelSummary {
+    pub id: String,
+    pub provider_id: String,
+    pub upstream_model_id: String,
+    pub public_model_id: String,
+    pub display_name: String,
+    pub source: String,
+    pub lifecycle_status: String,
+    pub enabled: bool,
+    pub capabilities: ModelCapabilities,
+    pub context_window_tokens: Option<i64>,
+    pub max_output_tokens: Option<i64>,
+    pub capability_source: String,
+    pub version: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelPage {
+    pub data: Vec<ModelSummary>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ModelListQuery {
+    pub cursor: Option<String>,
+    pub page_size: Option<u16>,
+    pub provider_id: Option<String>,
+    pub lifecycle_status: Option<String>,
+    pub enabled: Option<bool>,
+    pub capability: Option<String>,
+    pub search: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -90,6 +204,53 @@ struct CreateLocalKeyResponse {
     suffix: String,
     key: String,
     display_once: bool,
+}
+
+#[derive(Serialize)]
+struct VersionRequest {
+    version: i64,
+}
+
+pub(crate) fn validate_create_provider(input: &CreateProviderInput) -> Result<(), String> {
+    if input.slug.is_empty()
+        || input.slug.len() > 48
+        || input
+            .slug
+            .bytes()
+            .any(|byte| !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'))
+        || input.name.trim().is_empty()
+        || input.name.chars().count() > 128
+        || input.base_url.trim().is_empty()
+        || input.base_url.len() > 2048
+        || !matches!(
+            input.adapter_type.as_str(),
+            "openai-compatible" | "local-openai-compatible"
+        )
+        || !matches!(
+            input.auth_type.as_str(),
+            "api_key" | "bearer_token" | "none"
+        )
+        || !matches!(
+            input.auth_header_mode.as_str(),
+            "authorization_bearer" | "x_api_key"
+        )
+    {
+        return Err("服务配置无效".to_owned());
+    }
+    match input.auth_type.as_str() {
+        "none" if input.credential.is_some() => Err("无认证服务不应填写密钥".to_owned()),
+        "api_key" | "bearer_token"
+            if input
+                .credential
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_none() =>
+        {
+            Err("请填写上游密钥".to_owned())
+        }
+        _ => Ok(()),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -165,6 +326,100 @@ impl ReadyEvent {
     }
 }
 
+pub(crate) fn build_model_list_path(query: &ModelListQuery) -> Result<String, String> {
+    if let Some(page_size) = query.page_size {
+        if page_size == 0 || page_size > 200 {
+            return Err("模型分页参数无效".to_owned());
+        }
+    }
+    if let Some(cursor) = query.cursor.as_deref() {
+        if !valid_model_id(cursor) {
+            return Err("模型分页游标无效".to_owned());
+        }
+    }
+    if let Some(provider_id) = query.provider_id.as_deref() {
+        if !valid_model_id(provider_id) {
+            return Err("Provider 标识无效".to_owned());
+        }
+    }
+    if let Some(status) = query.lifecycle_status.as_deref() {
+        if !matches!(
+            status,
+            "available" | "degraded" | "missing_upstream" | "disabled"
+        ) {
+            return Err("模型状态筛选无效".to_owned());
+        }
+    }
+    if let Some(capability) = query.capability.as_deref() {
+        if !matches!(
+            capability,
+            "streaming" | "tools" | "parallel_tools" | "reasoning" | "thinking" | "vision"
+        ) {
+            return Err("模型能力筛选无效".to_owned());
+        }
+    }
+    if let Some(search) = query.search.as_deref() {
+        if search.is_empty()
+            || search.trim() != search
+            || search.len() > 128
+            || search.chars().any(char::is_control)
+        {
+            return Err("模型搜索条件无效".to_owned());
+        }
+    }
+
+    let mut parameters = Vec::new();
+    if let Some(cursor) = query.cursor.as_deref() {
+        parameters.push(("cursor", cursor.to_owned()));
+    }
+    if let Some(page_size) = query.page_size {
+        parameters.push(("page_size", page_size.to_string()));
+    }
+    if let Some(provider_id) = query.provider_id.as_deref() {
+        parameters.push(("provider_id", provider_id.to_owned()));
+    }
+    if let Some(status) = query.lifecycle_status.as_deref() {
+        parameters.push(("lifecycle_status", status.to_owned()));
+    }
+    if let Some(enabled) = query.enabled {
+        parameters.push(("enabled", enabled.to_string()));
+    }
+    if let Some(capability) = query.capability.as_deref() {
+        parameters.push(("capability", capability.to_owned()));
+    }
+    if let Some(search) = query.search.as_deref() {
+        parameters.push(("search", percent_encode(search)));
+    }
+    if parameters.is_empty() {
+        return Ok("/internal/v1/models".to_owned());
+    }
+    let query = parameters
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    Ok(format!("/internal/v1/models?{query}"))
+}
+
+fn valid_model_id(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 64 && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+fn percent_encode(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut result = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            result.push(byte as char);
+            continue;
+        }
+        result.push('%');
+        result.push(HEX[(byte >> 4) as usize] as char);
+        result.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    result
+}
+
 fn is_loopback_http_url(value: &str) -> bool {
     let Some(port) = value.strip_prefix("http://127.0.0.1:") else {
         return false;
@@ -236,6 +491,196 @@ impl CoreProcessManager {
             runtime,
             providers: page.data,
         })
+    }
+
+    pub fn list_models(&self, query: ModelListQuery) -> Result<ModelPage, String> {
+        let path = build_model_list_path(&query)?;
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::get_json(&ready.control_url, token.as_str(), &path)
+    }
+
+    pub fn set_model_enabled(
+        &self,
+        id: String,
+        version: i64,
+        enabled: bool,
+    ) -> Result<ModelSummary, String> {
+        if !valid_model_id(&id) || version < 1 {
+            return Err("模型标识或版本无效".to_owned());
+        }
+        let action = if enabled { "enable" } else { "disable" };
+        let path = format!("/internal/v1/models/{id}/{action}");
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::post_json(
+            &ready.control_url,
+            token.as_str(),
+            &path,
+            &VersionRequest { version },
+        )
+    }
+
+    pub fn create_provider(
+        &self,
+        mut input: CreateProviderInput,
+    ) -> Result<ProviderSummary, String> {
+        validate_create_provider(&input)?;
+        let request = ProviderCreateRequest {
+            slug: input.slug.trim().to_owned(),
+            name: input.name.trim().to_owned(),
+            adapter_type: input.adapter_type,
+            auth_type: input.auth_type,
+            base_url: input.base_url.trim().to_owned(),
+            timeout_ms: 30_000,
+            adapter_config: AdapterConfig {
+                wire_api: "chat_completions",
+                auth_header_mode: input.auth_header_mode,
+            },
+            credential: input.credential.take().map(EphemeralSecret::from_string),
+            version: 0,
+        };
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::post_json(
+            &ready.control_url,
+            token.as_str(),
+            "/internal/v1/providers",
+            &request,
+        )
+    }
+
+    pub fn delete_provider(&self, id: String, version: i64) -> Result<(), String> {
+        if !valid_model_id(&id) || version < 1 {
+            return Err("服务标识或版本无效".to_owned());
+        }
+        let path = format!("/internal/v1/providers/{id}");
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::delete_json(
+            &ready.control_url,
+            token.as_str(),
+            &path,
+            &VersionRequest { version },
+        )
+    }
+
+    pub fn set_provider_enabled(
+        &self,
+        id: String,
+        version: i64,
+        enabled: bool,
+    ) -> Result<ProviderSummary, String> {
+        if !valid_model_id(&id) || version < 1 {
+            return Err("服务标识或版本无效".to_owned());
+        }
+        let action = if enabled { "enable" } else { "disable" };
+        let path = format!("/internal/v1/providers/{id}/{action}");
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::post_json(
+            &ready.control_url,
+            token.as_str(),
+            &path,
+            &VersionRequest { version },
+        )
+    }
+
+    pub fn test_provider(&self, id: String) -> Result<ProviderTestResult, String> {
+        if !valid_model_id(&id) {
+            return Err("服务标识无效".to_owned());
+        }
+        let path = format!("/internal/v1/providers/{id}/test");
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::post_json(&ready.control_url, token.as_str(), &path, &())
+    }
+
+    pub fn sync_provider_models(&self, id: String) -> Result<SyncModelsResult, String> {
+        if !valid_model_id(&id) {
+            return Err("服务标识无效".to_owned());
+        }
+        let path = format!("/internal/v1/providers/{id}/sync-models");
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::post_json(&ready.control_url, token.as_str(), &path, &())
     }
 
     pub fn create_local_key(&self, name: String) -> Result<OneTimeLocalKey, String> {
