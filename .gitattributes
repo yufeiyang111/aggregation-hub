@@ -1,0 +1,2 @@
+# Markdown 文档中的两个尾随空格用于显式换行，不能被 git diff --check 误报。
+*.md whitespace=-trailing-space

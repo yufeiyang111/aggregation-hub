@@ -1,0 +1,23 @@
+{
+    "name":  "aggregation-hub",
+    "private":  true,
+    "packageManager":  "pnpm@11.18.0",
+    "scripts":  {
+                    "docs:check":  "node scripts/validate-docs.mjs",
+                    "web:typecheck":  "pnpm --dir apps/desktop typecheck",
+                    "web:lint":  "pnpm --dir apps/desktop lint",
+                    "web:test":  "pnpm --dir apps/desktop test --run",
+                    "core:test":  "cd apps/core \u0026\u0026 go test ./...",
+                    "core:test:race":  "cd apps/core \u0026\u0026 go test -race -ldflags=-linkmode=external ./...",
+                    "core:vet":  "cd apps/core \u0026\u0026 go vet ./...",
+                    "rust:test":  "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+                    "check":  "pnpm docs:check \u0026\u0026 pnpm release:check \u0026\u0026 pnpm web:typecheck \u0026\u0026 pnpm web:lint \u0026\u0026 pnpm web:test \u0026\u0026 pnpm core:vet \u0026\u0026 pnpm core:test \u0026\u0026 pnpm rust:test",
+                    "build:core":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-core-sidecar.ps1",
+                    "build:desktop":  "pnpm build:core \u0026\u0026 pnpm --dir apps/desktop tauri build",
+                    "release:check":  "node scripts/check-windows-installer-config.mjs",
+                    "release:windows":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1"
+                },
+    "engines":  {
+                    "node":  "\u003e=24.13.0 \u003c25"
+                }
+}

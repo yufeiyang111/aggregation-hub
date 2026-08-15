@@ -1,0 +1,86 @@
+openapi: 3.1.0
+info:
+  title: Aggregation Hub Core Control Plane
+  version: 0.1.0
+  description: >-
+    Core Control Plane 的最小运行时状态契约。响应只包含非敏感运行时元数据；
+    管理令牌、Provider 凭据、数据库路径和请求正文不属于此契约。
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://127.0.0.1
+    description: 仅允许 Core Control Plane 使用回环地址
+paths:
+  /internal/v1/runtime:
+    get:
+      operationId: getRuntimeStatus
+      summary: 查询 Core 运行时状态
+      description: >-
+        返回 Core 当前生命周期状态和 Data Plane 的本地地址。
+        React 不直接调用此接口，桌面端通过 Tauri Commands 间接访问。
+      security:
+        - ManagementToken: []
+      responses:
+        '200':
+          description: 当前 Core 运行时状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeStatus'
+        '401':
+          description: 管理令牌缺失或无效
+components:
+  securitySchemes:
+    ManagementToken:
+      type: apiKey
+      in: header
+      name: X-Aggregation-Hub-Management-Token
+      description: >-
+        仅供 Tauri Rust Sidecar 使用的每次启动随机管理令牌；
+        不得暴露给 WebView、日志、URL、数据库或外部客户端。
+  schemas:
+    RuntimeStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - data_plane_url
+        - started_at
+        - version
+        - last_error
+      properties:
+        state:
+          type: string
+          description: Core 生命周期状态
+          enum:
+            - starting
+            - running
+            - degraded
+            - stopped
+            - failed
+        data_plane_url:
+          type:
+            - string
+            - 'null'
+          description: Data Plane 回环地址；Core 未运行时可以为 null
+          pattern: '^http://127[.]0[.]0[.]1(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$'
+        started_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          description: 本次 Core 启动时间；尚未启动时可以为 null
+        version:
+          type: string
+          minLength: 1
+          description: Core 版本
+        last_error:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 2000
+          pattern: '^[^\r\n]*$'
+          description: 最近一次可安全展示的错误摘要；没有错误时为 null

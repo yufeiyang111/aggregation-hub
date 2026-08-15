@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Aggregation Hub 主窗口的最小权限集合","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"shell:allow-execute","allow":[{"args":["--bootstrap-stdin"],"name":"binaries/aggregation-hub-core","sidecar":true}]}]}}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "default",
+  "description": "Aggregation Hub 主窗口的最小权限集合",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/aggregation-hub-core",
+          "sidecar": true,
+          "args": ["--bootstrap-stdin"]
+        }
+      ]
+    }
+  ]
+}

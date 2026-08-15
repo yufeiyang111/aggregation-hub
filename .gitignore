@@ -1,0 +1,16 @@
+.toolchains/
+node_modules/
+dist/
+target/
+coverage/
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+.superpowers/
+apps/desktop/src-tauri/binaries/*.exe
+apps/desktop/src-tauri/binaries/*-x86_64-pc-windows-msvc
+artifacts/
+.npmrc
+*.tsbuildinfo

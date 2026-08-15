@@ -1,0 +1,70 @@
+name: Windows Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version; must exactly match apps/desktop/src-tauri/tauri.conf.json.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aggregation-hub-windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows-installer:
+    name: Build unsigned NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CI: true
+      CARGO_TARGET_DIR: ${{ github.workspace }}\.toolchains\cargo-target
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 24.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+
+      - name: Setup pnpm 11.18.0
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Setup Go 1.26.5
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.5
+          cache: true
+
+      - name: Setup Rust from rust-toolchain.toml
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+
+      - name: Install frozen dependencies
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Build checked Windows installer artifacts
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: pnpm release:windows -- -Version "$env:RELEASE_VERSION"
+
+      - name: Upload unsigned Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aggregation-hub-windows-x64-unsigned
+          path: artifacts/release/**
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,68 @@
+:root {
+  color: #24332e;
+  background: #f4f1ea;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: radial-gradient(circle at top right, rgba(193, 216, 201, 0.5), transparent 34rem), #f4f1ea;
+}
+
+button, input { font: inherit; }
+
+button:focus-visible, input:focus-visible { outline: 3px solid #bd5c34; outline-offset: 4px; }
+
+.app-shell { width: min(100% - 3rem, 72rem); min-height: 100vh; margin: 0 auto; padding: 4rem 0; }
+.app-header, .status-card { display: flex; justify-content: space-between; gap: 2rem; }
+.app-header { align-items: flex-start; margin-bottom: 2rem; }
+.eyebrow { margin: 0 0 .75rem; color: #6b7c74; font-size: .75rem; font-weight: 700; letter-spacing: .12em; }
+h1, h2, p { margin-top: 0; }
+h1 { margin-bottom: 0; color: #24332e; font-size: clamp(2.5rem, 8vw, 5rem); letter-spacing: -.06em; line-height: .95; }
+h2 { margin-bottom: 1rem; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.04em; }
+.status-chip { display: inline-flex; align-items: center; border: 1px solid #cbd8cf; border-radius: 999px; padding: .5rem .8rem; color: #52665d; background: rgba(255,255,255,.55); font-size: .875rem; font-weight: 700; white-space: nowrap; }
+.status-running { border-color: #83ae91; color: #1f6a39; background: #edf8ef; }
+.status-failed { border-color: #df9a86; color: #9d3f24; background: #fff1eb; }
+.status-card, .panel { border: 1px solid #d5ded7; border-radius: 1.5rem; background: rgba(255,255,255,.72); box-shadow: 0 1.5rem 4rem rgba(61,81,72,.08); }
+.status-card { align-items: flex-end; padding: clamp(1.5rem, 5vw, 3rem); }
+.status-message { margin-bottom: .75rem; color: #bd5c34; font-size: 1.25rem; font-weight: 800; }
+.runtime-details { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin: 1.25rem 0 0; color: #62726b; }
+.runtime-details div { min-width: 12rem; }
+dt { font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+dd { margin: .25rem 0 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.action-group { display: flex; flex-wrap: wrap; gap: .75rem; }
+.primary-button, .secondary-button { border: 0; border-radius: .8rem; padding: .8rem 1.1rem; cursor: pointer; font-weight: 700; }
+.primary-button { color: #fffdf8; background: #24332e; }
+.primary-button:hover:not(:disabled) { background: #3b5148; }
+.secondary-button { border: 1px solid #b8c7bd; color: #31443a; background: #fffdf8; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+.error-banner { margin: 1rem 0; border: 1px solid #df9a86; border-radius: .8rem; padding: .85rem 1rem; color: #8b301b; background: #fff1eb; }
+.content-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; margin-top: 1.25rem; }
+.panel { padding: 1.5rem; }
+.panel-description, .hint { color: #62726b; line-height: 1.65; }
+.field-label { display: block; margin: 1rem 0 .45rem; color: #31443a; font-size: .875rem; font-weight: 700; }
+.text-input { width: 100%; border: 1px solid #b8c7bd; border-radius: .65rem; padding: .7rem .8rem; color: #24332e; background: #fffdf8; }
+.full-width { width: 100%; margin-top: .85rem; }
+.one-time-key { display: grid; gap: .75rem; margin-top: 1rem; border: 1px solid #e7c36d; border-radius: .8rem; padding: 1rem; background: #fff8df; }
+.warning-label { margin-bottom: 0; color: #795b08; font-size: .8rem; font-weight: 800; }
+.one-time-key code { overflow-wrap: anywhere; color: #523800; font-size: .9rem; }
+.provider-list { display: grid; gap: .7rem; margin: 0; padding: 0; list-style: none; }
+.provider-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid #e1e8e2; padding-top: .75rem; }
+.provider-item strong, .provider-item span { display: block; }
+.provider-item span { margin-top: .2rem; color: #62726b; font-size: .85rem; }
+.provider-state { flex: 0 0 auto; margin: 0 !important; border-radius: 999px; padding: .3rem .55rem; color: #64736c !important; background: #edf1ee; font-weight: 700; }
+.provider-state.enabled { color: #1f6a39 !important; background: #edf8ef; }
+
+@media (max-width: 720px) {
+  .app-shell { width: min(100% - 2rem, 72rem); padding: 2rem 0; }
+  .app-header, .status-card { flex-direction: column; align-items: stretch; }
+  .content-grid { grid-template-columns: 1fr; }
+  .action-group { width: 100%; }
+  .action-group button { flex: 1 1 auto; }
+}
