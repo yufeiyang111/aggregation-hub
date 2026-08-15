@@ -109,9 +109,11 @@ func TestCoreStartupCreatesLocalKeyAndProtectsDataPlane(t *testing.T) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	assertHTTPStatus(t, client, http.MethodGet, ready.DataPlaneURL+"/health", "", "", http.StatusOK)
 	assertHTTPStatus(t, client, http.MethodGet, ready.DataPlaneURL+"/v1/models", "", "", http.StatusUnauthorized)
+	assertHTTPStatus(t, client, http.MethodPost, ready.DataPlaneURL+"/v1/messages", "", "", http.StatusUnauthorized)
 
 	key := createLocalKey(t, client, ready.ControlURL, managementToken)
 	assertHTTPStatus(t, client, http.MethodGet, ready.DataPlaneURL+"/v1/models", "Authorization", "Bearer "+key, http.StatusOK)
+	assertHTTPStatus(t, client, http.MethodPost, ready.DataPlaneURL+"/v1/messages", "Authorization", "Bearer "+key, http.StatusBadRequest)
 	shutdownCore(t, client, ready.ControlURL, managementToken)
 
 	select {

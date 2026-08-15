@@ -12,9 +12,10 @@
 
 ## Claude Code 与 Anthropic
 
+- **2026-08-15 已核对（Anthropic 官方）**：Messages API：https://platform.claude.com/docs/en/api/messages
+- **2026-08-15 已核对（Anthropic 官方）**：Messages Streaming：https://platform.claude.com/docs/en/build-with-claude/streaming
 - LLM Gateway：https://platform.claude.com/docs/en/claude-code/llm-gateway
 - Claude Code Settings：https://platform.claude.com/docs/en/claude-code/settings
-- Messages Streaming：https://platform.claude.com/docs/en/build-with-claude/streaming
 - Tool Use：https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview
 
 实施时核对 Base URL/认证变量、Claude Code 必需端点、SSE 顺序、Tool 内容块、Thinking/Beta Header，以及官方 OAuth 是否允许第三方网关复用。

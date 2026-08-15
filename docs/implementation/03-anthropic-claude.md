@@ -29,10 +29,21 @@
 - Create: `apps/core/internal/ingress/anthropic/response.go`
 - Create: `apps/core/internal/ingress/anthropic/handler.go`
 - Create: `apps/core/internal/ingress/anthropic/handler_test.go`
-- Modify: `apps/core/internal/dataplane/server.go`
-- Modify: `contracts/control-plane.openapi.yaml`
+- Modify: `apps/core/cmd/aggregation-hub-core/main.go`
+- Modify: `docs/04-api-design.md`
+- Modify: `docs/references.md`
+
+> 修正：`control-plane.openapi.yaml` 仅描述 Tauri Rust 与 Core 的内部控制面；`/v1/messages` 属于 Data Plane，不能混入该契约。
 
 **Interfaces:** Produces `POST /v1/messages`；consumes Local Auth、Router、Normalized Contract。
+
+**2026-08-15 状态：** 已完成非流式 text、tool_use、tool_result 纵向切片与严格输入边界（L1）；`stream` 和 Thinking 输出将在 Task 3.3 完成前显式返回 `unsupported_feature`，不得描述为 Claude Code 兼容已完成。
+
+**实施记录（2026-08-15）：**
+
+- 已完成严格 DTO、大小限制、system/text/tool_use/tool_result 归一化、非流式 Anthropic message 序列化，以及 Data Plane 路由注册。
+- 已通过：`go test ./internal/ingress/anthropic -v`、`go test ./cmd/aggregation-hub-core ./internal/ingress/anthropic -v`、`pnpm check`。
+- `go test -race` 在本机 Windows Go Race 链接阶段因 `windynrelocsym` / `__imp_*` 工具链错误失败，且同样影响未改动的 `openai_chat`、`routing` 包；该项保持未验证，未通过修改系统环境或降低测试门禁绕过。
 
 - [ ] **Step 1: 写失败契约测试**
 

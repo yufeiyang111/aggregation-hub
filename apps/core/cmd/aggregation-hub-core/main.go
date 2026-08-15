@@ -23,6 +23,7 @@ import (
 	"aggregationhub.local/core/internal/dataplane"
 	"aggregationhub.local/core/internal/gateway"
 	"aggregationhub.local/core/internal/health"
+	anthropicingress "aggregationhub.local/core/internal/ingress/anthropic"
 	openaiingress "aggregationhub.local/core/internal/ingress/openai_chat"
 	"aggregationhub.local/core/internal/management"
 	"aggregationhub.local/core/internal/observability"
@@ -116,6 +117,11 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("Chat 入口初始化失败")
 		return 1
 	}
+	messagesHandler, err := anthropicingress.NewHandler(gate)
+	if err != nil {
+		logger.Print("Anthropic Messages 入口初始化失败")
+		return 1
+	}
 	dataListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", config.LoopbackHost, cfg.ListenPort))
 	if err != nil {
 		logger.Print("Data Plane 监听失败")
@@ -133,6 +139,7 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 	ready := bootstrap.ReadyEvent{Event: "ready", ControlURL: fmt.Sprintf("http://%s:%d", config.LoopbackHost, controlPort), DataPlaneURL: fmt.Sprintf("http://%s:%d", config.LoopbackHost, dataListener.Addr().(*net.TCPAddr).Port), PID: os.Getpid()}
 	protectedDataPlane := http.NewServeMux()
 	protectedDataPlane.Handle("POST /v1/chat/completions", chatHandler)
+	protectedDataPlane.Handle("POST /v1/messages", messagesHandler)
 	protectedDataPlane.Handle("GET /v1/models", dataplane.NewModelsHandler(modelRepository))
 	dataRouter := dataplane.NewRouter(health.NewHandler(cfg.Version), protectedDataPlane, localKeyService)
 	dataServer := dataplane.NewServer(cfg, dataRouter)
