@@ -118,7 +118,15 @@ try {
     $installerDestination = Join-Path $artifactDirectory $installerName
     Copy-Item -LiteralPath $installer.FullName -Destination $installerDestination
 
-    $hash = (Get-FileHash -LiteralPath $installerDestination -Algorithm SHA256).Hash.ToLowerInvariant()
+    # 使用 .NET 直接计算 SHA-256，避免依赖 PowerShell 模块自动加载（GitHub runner 上曾报 Get-FileHash 找不到）。
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash([System.IO.File]::ReadAllBytes($installerDestination))
+    }
+    finally {
+        $sha256.Dispose()
+    }
+    $hash = ([System.BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant()
     $hashPath = "$installerDestination.sha256"
     [System.IO.File]::WriteAllText($hashPath, "$hash *$installerName`n", (New-Object System.Text.UTF8Encoding($false)))
 
