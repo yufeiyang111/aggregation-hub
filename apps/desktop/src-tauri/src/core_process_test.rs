@@ -1,8 +1,28 @@
 use crate::core_process::{
-    build_model_list_path, validate_create_provider, validate_update_provider, CreateProviderInput,
-    ModelCapabilityOverride, ModelListQuery, ReadyEvent, RuntimeLifecycle, RuntimeState,
-    UpdateModelCapabilitiesInput, UpdateProviderInput,
+    build_model_list_path, build_provider_adapter_config, validate_create_provider,
+    validate_update_provider, CreateProviderInput, ModelCapabilityOverride, ModelListQuery,
+    ReadyEvent, RuntimeLifecycle, RuntimeState, UpdateModelCapabilitiesInput, UpdateProviderInput,
 };
+
+#[test]
+fn anthropic_provider_config_uses_messages_defaults() {
+    let config = build_provider_adapter_config("anthropic-compatible", "x_api_key")
+        .expect("Anthropic 配置应可构造");
+    let json = serde_json::to_value(config).expect("配置应可序列化");
+    assert_eq!(json["messages_path"], "/v1/messages");
+    assert_eq!(json["anthropic_version"], "2023-06-01");
+    assert_eq!(json["auth_header_mode"], "x_api_key");
+}
+
+#[test]
+fn openai_provider_config_keeps_chat_defaults() {
+    let config = build_provider_adapter_config("openai-compatible", "authorization_bearer")
+        .expect("OpenAI 配置应可构造");
+    let json = serde_json::to_value(config).expect("配置应可序列化");
+    assert_eq!(json["wire_api"], "chat_completions");
+    assert_eq!(json["auth_header_mode"], "authorization_bearer");
+    assert!(json.get("messages_path").is_none());
+}
 
 fn ready_event() -> ReadyEvent {
     ReadyEvent {

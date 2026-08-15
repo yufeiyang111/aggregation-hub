@@ -10,10 +10,21 @@ export interface RuntimeSnapshot {
   last_error: string | null;
 }
 
-export interface AdapterConfig {
-  wire_api: "chat_completions" | "responses";
-  auth_header_mode: "authorization_bearer" | "x_api_key";
-}
+export type AuthHeaderMode = "authorization_bearer" | "x_api_key";
+
+export type AdapterConfig =
+  | {
+      wire_api: "chat_completions" | "responses";
+      auth_header_mode: AuthHeaderMode;
+      messages_path?: never;
+      anthropic_version?: never;
+    }
+  | {
+      messages_path: "/v1/messages";
+      anthropic_version: "2023-06-01";
+      auth_header_mode: AuthHeaderMode;
+      wire_api?: never;
+    };
 
 export interface CredentialState {
   configured: boolean;
@@ -43,9 +54,9 @@ export interface DashboardSnapshot {
 export interface CreateProviderInput {
   slug: string;
   name: string;
-  adapter_type: "openai-compatible" | "local-openai-compatible";
+  adapter_type: "openai-compatible" | "local-openai-compatible" | "anthropic-compatible";
   auth_type: "api_key" | "bearer_token" | "none";
-  auth_header_mode: "authorization_bearer" | "x_api_key";
+  auth_header_mode: AuthHeaderMode;
   base_url: string;
   credential?: string;
 }

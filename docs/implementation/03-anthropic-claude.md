@@ -95,6 +95,8 @@ Expected: PASS。Suggested commit when authorized: `feat(api): add Anthropic mes
 
 **2026-08-15 状态：** 已完成非流式请求/响应映射、`anthropic-version` 与受控认证头注入（L1）。自动模型发现、SSE、Thinking 输出与真实 Provider 验证尚未完成；Adapter 将流式和自动发现明确标记为未支持，不读取或保存完整凭据。
 
+**桌面端配置补充（2026-08-15）：** 已完成 Provider 创建/编辑对 `anthropic-compatible` 的支持（L1）。新增表单会默认 API Key + `X-API-Key`，Tauri 桥接生成 `/v1/messages` 与 `2023-06-01` 配置；编辑时保留 Anthropic Messages 配置，不会降级成 OpenAI Chat 配置。
+
 - [ ] **Step 1: 写 Fixture 契约测试**
 
 加入 text、system、tool_use、tool_result、thinking、usage、401、429、5xx 和畸形 JSON Fixture；验证完整秘密和 Tool 参数不会进入错误或日志。

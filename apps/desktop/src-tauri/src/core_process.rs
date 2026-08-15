@@ -139,8 +139,61 @@ impl Drop for EphemeralSecret {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdapterConfig {
-    wire_api: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wire_api: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    messages_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    anthropic_version: Option<String>,
     auth_header_mode: String,
+}
+
+pub(crate) fn build_provider_adapter_config(
+    adapter_type: &str,
+    auth_header_mode: &str,
+) -> Result<AdapterConfig, String> {
+    if !matches!(auth_header_mode, "authorization_bearer" | "x_api_key") {
+        return Err("服务配置无效".to_owned());
+    }
+    match adapter_type {
+        "openai-compatible" | "local-openai-compatible" => Ok(AdapterConfig {
+            wire_api: Some("chat_completions".to_owned()),
+            messages_path: None,
+            anthropic_version: None,
+            auth_header_mode: auth_header_mode.to_owned(),
+        }),
+        "anthropic-compatible" => Ok(AdapterConfig {
+            wire_api: None,
+            messages_path: Some("/v1/messages".to_owned()),
+            anthropic_version: Some("2023-06-01".to_owned()),
+            auth_header_mode: auth_header_mode.to_owned(),
+        }),
+        _ => Err("服务配置无效".to_owned()),
+    }
+}
+
+pub(crate) fn update_provider_adapter_config(
+    adapter_config: AdapterConfig,
+    auth_header_mode: String,
+) -> Result<AdapterConfig, String> {
+    if !matches!(
+        auth_header_mode.as_str(),
+        "authorization_bearer" | "x_api_key"
+    ) {
+        return Err("服务配置无效".to_owned());
+    }
+    match (
+        adapter_config.wire_api.as_deref(),
+        adapter_config.messages_path.as_deref(),
+        adapter_config.anthropic_version.as_deref(),
+    ) {
+        (Some("chat_completions" | "responses"), None, None)
+        | (None, Some("/v1/messages"), Some("2023-06-01")) => Ok(AdapterConfig {
+            auth_header_mode,
+            ..adapter_config
+        }),
+        _ => Err("服务配置无效".to_owned()),
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -354,7 +407,7 @@ pub(crate) fn validate_create_provider(input: &CreateProviderInput) -> Result<()
         || input.base_url.len() > 2048
         || !matches!(
             input.adapter_type.as_str(),
-            "openai-compatible" | "local-openai-compatible"
+            "openai-compatible" | "local-openai-compatible" | "anthropic-compatible"
         )
         || !matches!(
             input.auth_type.as_str(),
@@ -828,14 +881,14 @@ impl CoreProcessManager {
         let request = ProviderCreateRequest {
             slug: input.slug.trim().to_owned(),
             name: input.name.trim().to_owned(),
-            adapter_type: input.adapter_type,
+            adapter_type: input.adapter_type.clone(),
             auth_type: input.auth_type,
             base_url: input.base_url.trim().to_owned(),
             timeout_ms: 30_000,
-            adapter_config: AdapterConfig {
-                wire_api: "chat_completions".to_owned(),
-                auth_header_mode: input.auth_header_mode,
-            },
+            adapter_config: build_provider_adapter_config(
+                &input.adapter_type,
+                &input.auth_header_mode,
+            )?,
             credential: input.credential.take().map(EphemeralSecret::from_string),
             version: 0,
         };
@@ -870,20 +923,13 @@ impl CoreProcessManager {
             return Err("服务标识无效".to_owned());
         }
         validate_update_provider(&input)?;
-        if !matches!(
-            adapter_config.wire_api.as_str(),
-            "chat_completions" | "responses"
-        ) {
-            return Err("服务配置无效".to_owned());
-        }
+        let adapter_config =
+            update_provider_adapter_config(adapter_config, input.auth_header_mode.clone())?;
         let request = ProviderUpdateRequest {
             name: input.name.trim().to_owned(),
             base_url: input.base_url.trim().to_owned(),
             timeout_ms: input.timeout_ms,
-            adapter_config: AdapterConfig {
-                wire_api: adapter_config.wire_api,
-                auth_header_mode: input.auth_header_mode,
-            },
+            adapter_config,
             credential: input.credential.take().map(EphemeralSecret::from_string),
             version: input.version,
         };

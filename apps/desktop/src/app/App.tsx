@@ -183,10 +183,18 @@ function CreateProviderDialog({ open, pending, onClose, onCreate }: { open: bool
   const handleAdapterChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     const next = event.target.value as CreateProviderInput["adapter_type"];
     setAdapterType(next);
+    setCredential("");
     if (next === "local-openai-compatible") {
       setAuthType("none");
-      setCredential("");
+      return;
     }
+    if (next === "anthropic-compatible") {
+      setAuthType("api_key");
+      setAuthHeaderMode("x_api_key");
+      return;
+    }
+    setAuthType("api_key");
+    setAuthHeaderMode("authorization_bearer");
   }, []);
   const handleAuthChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     const next = event.target.value as CreateProviderInput["auth_type"];
@@ -224,9 +232,9 @@ function CreateProviderDialog({ open, pending, onClose, onCreate }: { open: bool
         <form className="provider-form" onSubmit={handleSubmit}>
           <label><span>名称</span><input className="text-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={128} autoFocus /></label>
           <label><span>Slug</span><input className="text-input" value={slug} onChange={(event) => setSlug(event.target.value)} maxLength={48} placeholder="my-openai" /></label>
-          <label><span>服务类型</span><select className="text-input" value={adapterType} onChange={handleAdapterChange}><option value="openai-compatible">OpenAI 兼容</option><option value="local-openai-compatible">本地 OpenAI 兼容</option></select></label>
+          <label><span>服务类型</span><select className="text-input" value={adapterType} onChange={handleAdapterChange}><option value="openai-compatible">OpenAI 兼容</option><option value="anthropic-compatible">Anthropic 兼容（Messages）</option><option value="local-openai-compatible">本地 OpenAI 兼容</option></select></label>
           <label><span>上游地址</span><input className="text-input" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} maxLength={2048} placeholder="https://api.example.com" inputMode="url" /></label>
-          <label><span>认证方式</span><select className="text-input" value={authType} onChange={handleAuthChange} disabled={adapterType === "local-openai-compatible"}><option value="api_key">API Key</option><option value="bearer_token">Bearer Token</option><option value="none">不使用认证</option></select></label>
+          <label><span>认证方式</span><select className="text-input" value={authType} onChange={handleAuthChange} disabled={adapterType === "local-openai-compatible"}><option value="api_key">API Key</option><option value="bearer_token">Bearer Token</option>{adapterType !== "anthropic-compatible" ? <option value="none">不使用认证</option> : null}</select></label>
           {authType !== "none" ? <><label><span>认证请求头</span><select className="text-input" value={authHeaderMode} onChange={(event) => setAuthHeaderMode(event.target.value as CreateProviderInput["auth_header_mode"])}><option value="authorization_bearer">Authorization: Bearer</option><option value="x_api_key">X-API-Key</option></select></label><label className="provider-form-wide"><span>上游密钥</span><input className="text-input" value={credential} onChange={(event) => setCredential(event.target.value)} type="password" autoComplete="off" maxLength={5120} /></label></> : null}
           {formError ? <p className="form-error" role="alert">{formError}</p> : null}
           <div className="button-group provider-form-wide"><button type="button" className="button button-secondary" onClick={onClose} disabled={pending}>取消</button><button type="submit" className="button button-primary" disabled={pending}>{pending ? "正在保存" : "保存服务"}</button></div>
