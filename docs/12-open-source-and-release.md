@@ -52,10 +52,9 @@ Windows 发布至少包含安装包、版本、SHA-256、SBOM、第三方许可�
 
 当前仓库已提供 Windows x64 的 NSIS 一键安装包构建基线：`pnpm release:windows` 会运行完整 Gate、构建 Tauri Desktop 与 Core Sidecar、整理 `Setup.exe`、生成 SHA-256 和无秘密的工件清单。Tauri 配置为当前用户安装、在线 WebView2 Bootstrapper、拒绝降级安装，并创建开始菜单和桌面快捷方式。
 
-`.github/workflows/windows-release-build.yml` 只能由 `workflow_dispatch` 手动触发；触发时必须输入与 `tauri.conf.json` 完全一致的版本号，且只上传 GitHub Actions Artifact；不创建 GitHub Release、不上传外部存储、不使用发布或签名凭据。当前产物必须标识为 unsigned，未完成干净 Windows VM 安装、升级、卸载与真实客户端兼容验证前，不得声称可正式发布。
+`.github/workflows/windows-release-build.yml` 仅由 `v*` 语义化版本标签触发。工作流从标签解析版本并要求其与 `tauri.conf.json` 完全一致；它使用 GitHub Actions 自动注入的短期 `GITHUB_TOKEN`（仅 `contents: write`）创建同仓库的 GitHub Pre-release，并上传 NSIS Setup、SHA-256 与工件清单，同时保留 14 天构建 Artifact 供排错。工作流不使用用户 Token、外部对象存储或代码签名凭据。当前产物必须标识为 unsigned，未完成干净 Windows VM 安装、升级、卸载与真实客户端兼容验证前，不得声称可正式发布。
 
-发布工件静态扫描仅检测已知 Local Key、常见 API Key、GitHub Token 和 SQLite 数据库头标记；它不能替代 Phase 7 的 Sentinel 全链路秘密扫描。
-## 8. 发布流程
+发布工件静态扫描仅检测已知 Local Key、常见 API Key、GitHub Token 和 SQLite 数据库头标记；它不能替代 Phase 7 的 Sentinel 全链路秘密扫描。## 8. 发布流程
 
 冻结候选 -> 完整 CI -> 构建签名 -> 干净 VM 安装 -> 数据库升级/恢复 -> Claude Code/Codex L4 -> OAuth L5 或限制报告 -> 秘密扫描 -> 生成 SBOM/校验和 -> 发布标签与说明。
 

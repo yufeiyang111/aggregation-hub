@@ -31,13 +31,18 @@ const hooks = readFileSync(hooksPath, "utf8");
 requireValue(hooks.includes("NSIS_HOOK_POSTINSTALL") && hooks.includes("CreateShortcut"), "NSIS 安装后必须创建桌面快捷方式。");
 requireValue(hooks.includes("NSIS_HOOK_POSTUNINSTALL") && hooks.includes("Delete"), "NSIS 卸载后必须清理桌面快捷方式。");
 
-requireValue(existsSync(workflowPath), "Windows Release Build workflow 不存在。");
+requireValue(existsSync(workflowPath), "Windows Pre-release workflow 不存在。");
 const workflow = readFileSync(workflowPath, "utf8");
-requireValue(/^on:\s*\r?\n\s*workflow_dispatch:\s*\r?\n\s*inputs:\s*\r?\n\s*version:/m.test(workflow), "Release workflow 必须要求手动输入版本号。");
-requireValue(/version:\s*\r?\n\s*description:.*\r?\n\s*required:\s*true\s*\r?\n\s*type:\s*string/m.test(workflow), "Release workflow 的版本输入必须为必填字符串。");
-requireValue(workflow.includes('RELEASE_VERSION: ${{ inputs.version }}'), "Release workflow 必须通过环境变量传递版本输入。");
-requireValue(workflow.includes('pnpm release:windows -- -Version "$env:RELEASE_VERSION"'), "Release workflow 必须把版本输入传给受控发布构建脚本。");
-requireValue(workflow.includes("actions/upload-artifact@v4"), "Release workflow 必须上传构建工件。");
-requireValue(!/\bgh\s+release\b|softprops\/action-gh-release|ncipollo\/release-action/u.test(workflow), "Release workflow 不得创建或发布 GitHub Release。");
+requireValue(/^on:\s*\r?\n\s*push:\s*\r?\n\s*tags:\s*\r?\n\s*-\s*["']v\*["']/m.test(workflow), "Pre-release workflow 必须仅由 v* 版本标签触发。");
+requireValue(/^permissions:\s*\r?\n\s*contents:\s*write/m.test(workflow), "Pre-release workflow 必须只授予 contents: write，以创建同仓库 Release。");
+requireValue(workflow.includes("actions/checkout@v4") && workflow.includes("persist-credentials: false"), "检出步骤必须禁用持久化 GitHub 凭据。");
+requireValue(workflow.includes("pnpm install --frozen-lockfile"), "Pre-release workflow 必须使用 frozen lockfile 安装依赖。");
+requireValue(workflow.includes("pnpm release:windows -- -Version \"$env:RELEASE_VERSION\""), "Pre-release workflow 必须将标签解析出的版本传给受控发布构建脚本。");
+requireValue(workflow.includes("actions/upload-artifact@v4"), "Pre-release workflow 必须保留构建 Artifact 以便诊断。");
+requireValue(workflow.includes("actions/github-script@v7"), "Pre-release workflow 必须使用 GitHub 官方 github-script Action 创建 Release。");
+requireValue(workflow.includes("github.rest.repos.createRelease") && workflow.includes("prerelease: true"), "Pre-release workflow 必须创建 GitHub 预发布版本。");
+requireValue(workflow.includes("github.rest.repos.uploadReleaseAsset"), "Pre-release workflow 必须上传安装器、校验和与清单。");
+requireValue(workflow.includes("github-token: ${{ github.token }}"), "Pre-release workflow 必须仅使用 GitHub Actions 自动注入的短期 Token。");
+requireValue(!/softprops\/action-gh-release|ncipollo\/release-action/u.test(workflow), "Pre-release workflow 不得引入第三方 GitHub Release Action。");
 
-console.log("Windows NSIS 安装器配置校验通过。");
+console.log("Windows NSIS 预发布工作流配置校验通过。");

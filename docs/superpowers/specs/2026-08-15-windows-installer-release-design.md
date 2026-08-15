@@ -91,7 +91,7 @@ Windows 设置 > 已安装的应用
 | 卸载误删用户数据 | 卸载只移除安装目录和快捷方式；默认保留 `%LOCALAPPDATA%\AggregationHub` 与 CredentialStore 条目。 |
 | 升级破坏数据 | 保持 Tauri `identifier` 稳定；不在安装器中重置 SQLite，不执行破坏性迁移。 |
 | 未签名提示被误解 | 发布说明、校验文件和 SHA-256 使用说明必须随工件提供；后续正式版引入代码签名。 |
-| 发布工作流越权 | Release workflow 只生成 Actions Artifact，不创建公开 Release、不使用发布 Token。 |
+| 发布工作流越权 | Pre-release workflow 只由 `v*` 标签触发；权限收敛为 `contents: write`，仅使用 GitHub Actions 短期 Token，且只向同仓库上传已检查的工件。 |
 
 ## 6. 验收标准
 

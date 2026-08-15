@@ -151,8 +151,8 @@ Expected: MSI/NSIS、SHA-256 和资源扫描报告生成成功。Suggested commi
 - [x] NSIS Bundle 已启用，目标固定为 `nsis`，并打包 `aggregation-hub-core` Sidecar。
 - [x] 安装模式为 `currentUser`；WebView2 使用 `downloadBootstrapper`，拒绝降级安装；开始菜单和桌面快捷方式由 NSIS hooks 创建和清理。
 - [x] `scripts/build-release.ps1` 顺序执行 `pnpm check`、`pnpm build:desktop`、Setup 工件整理、SHA-256 与已知秘密标记静态扫描，并为避免覆盖已存在工件目录而失败退出。
-- [x] `.github/workflows/windows-release-build.yml` 仅允许手动触发、校验输入版本号与 Tauri 版本一致，并上传 unsigned Actions Artifact，不创建 GitHub Release、不使用签名或发布凭据。
-- [x] `scripts/check-windows-installer-config.mjs` 覆盖 Bundle、WebView2、安装模式、Sidecar、快捷方式 hooks 和 Release workflow 的静态约束。
+- [x] `.github/workflows/windows-release-build.yml` 仅在推送 `v*` 版本标签时运行：从标签解析并校验版本、构建 unsigned NSIS 工件、保留 Actions Artifact，并仅使用 Actions 短期 `GITHUB_TOKEN` 创建同仓库 GitHub Pre-release 和上传工件；不使用用户 Token、外部对象存储或签名凭据。
+- [x] `scripts/check-windows-installer-config.mjs` 覆盖 Bundle、WebView2、安装模式、Sidecar、快捷方式 hooks、标签触发、最小 Release 权限、预发布标记和工件上传的静态约束。
 
 本记录只证明本地静态配置和构建链；代码签名、SBOM、许可证/Notices、干净 VM 安装/卸载/升级、真实 Provider、Claude Code、Codex 与 OAuth 验证仍未完成。Phase 7 Task 7.3/7.4 的其余步骤不得因为本基线而勾选完成。
 

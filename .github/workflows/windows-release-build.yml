@@ -1,23 +1,20 @@
-name: Windows Release Build
+name: Windows Pre-release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Release version; must exactly match apps/desktop/src-tauri/tauri.conf.json.
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: aggregation-hub-windows-release-${{ github.ref }}
+  group: aggregation-hub-windows-prerelease-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-windows-installer:
-    name: Build unsigned NSIS installer
+  build-and-publish-windows-installer:
+    name: Build and publish unsigned NSIS prerelease
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -25,10 +22,21 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}\.toolchains\cargo-target
 
     steps:
-      - name: Checkout
+      - name: Checkout tagged source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Resolve and validate release version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(?<version>0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$') {
+            throw "版本标签必须是 v<SemVer>，实际值：$tag"
+          }
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_VERSION=$($Matches.version)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup Node.js 24.13.0
         uses: actions/setup-node@v4
@@ -55,16 +63,75 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Build checked Windows installer artifacts
+      - name: Build checked Windows prerelease artifacts
         shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
         run: pnpm release:windows -- -Version "$env:RELEASE_VERSION"
 
-      - name: Upload unsigned Windows artifacts
+      - name: Upload unsigned Windows build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aggregation-hub-windows-x64-unsigned
-          path: artifacts/release/**
+          name: aggregation-hub-${{ env.RELEASE_TAG }}-windows-x64-unsigned
+          path: artifacts/release/${{ env.RELEASE_TAG }}/windows-x64/**
           if-no-files-found: error
           retention-days: 14
+
+      - name: Create GitHub prerelease and upload assets
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+
+            const tag = process.env.RELEASE_TAG;
+            const version = process.env.RELEASE_VERSION;
+            const artifactDirectory = path.join(
+              process.env.GITHUB_WORKSPACE,
+              "artifacts",
+              "release",
+              tag,
+              "windows-x64",
+            );
+            const assetNames = [
+              `Aggregation-Hub_${version}_x64-setup.exe`,
+              `Aggregation-Hub_${version}_x64-setup.exe.sha256`,
+              "manifest.json",
+            ];
+            const assetPaths = assetNames.map((name) => path.join(artifactDirectory, name));
+            const missingAssets = assetPaths.filter((assetPath) => !fs.existsSync(assetPath));
+            if (missingAssets.length > 0) {
+              core.setFailed(`发布工件缺失：${missingAssets.join(", ")}`);
+              return;
+            }
+
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              target_commitish: context.sha,
+              name: `Aggregation Hub ${tag} Pre-release`,
+              body: [
+                `Aggregation Hub ${version} Windows x64 预发布版。`,
+                "",
+                "- 这是未代码签名的测试安装包；Windows 可能显示未知发布者或 SmartScreen 提示。",
+                "- 首次安装时，WebView2 Bootstrapper 可能需要联网下载 Microsoft WebView2 Runtime。",
+                "- 下载后请使用同名 `.sha256` 文件校验 Setup.exe 完整性。",
+                "- 请通过 GitHub Issue 报告问题；不要在 Issue 中提交 API Key、Token、日志原文或数据库文件。",
+              ].join("\n"),
+              prerelease: true,
+              draft: false,
+              generate_release_notes: true,
+            });
+
+            for (const assetPath of assetPaths) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                name: path.basename(assetPath),
+                data: fs.readFileSync(assetPath),
+              });
+            }
