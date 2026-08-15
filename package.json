@@ -10,7 +10,7 @@
                     "core:test":  "cd apps/core \u0026\u0026 go test ./...",
                     "core:test:race":  "cd apps/core \u0026\u0026 go test -race -ldflags=-linkmode=external ./...",
                     "core:vet":  "cd apps/core \u0026\u0026 go vet ./...",
-                    "rust:test":  "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+                    "rust:test":  "pnpm build:core \u0026\u0026 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
                     "check":  "pnpm docs:check \u0026\u0026 pnpm release:check \u0026\u0026 pnpm web:typecheck \u0026\u0026 pnpm web:lint \u0026\u0026 pnpm web:test \u0026\u0026 pnpm core:vet \u0026\u0026 pnpm core:test \u0026\u0026 pnpm rust:test",
                     "build:core":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-core-sidecar.ps1",
                     "build:desktop":  "pnpm build:core \u0026\u0026 pnpm --dir apps/desktop tauri build",
