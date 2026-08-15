@@ -89,7 +89,7 @@ Ingress 按入口协议转换错误外形。`details` 只允许白名单字段�
 
 目标支持 Anthropic Messages 的编程 Agent 关键子集：model、max_tokens、messages、system、stream、tools、tool_choice、temperature、stop_sequences，以及由模型能力控制的 Thinking 字段。
 
-当前已实现非流式 text、tool_use、tool_result 输入与 text、tool_use 输出；stream 与 Thinking 输出将在后续状态机任务完成前明确返回 `unsupported_feature`，不会静默丢弃字段。流式输出完成后必须保持消息开始、内容块开始、增量、内容块结束、消息增量和消息结束的合法顺序。具体字段以实施时当前官方文档和真实 Claude Code 夹具为准。
+当前已实现非流式 text、tool_use、tool_result 输入与 text、tool_use 输出；流式已支持 `message_start`、text 增量、`tool_use`/`input_json_delta`、内容块结束、usage 和终态消息事件。Thinking 内容与增量当前明确返回 `unsupported_feature`；未知顶层事件按前向兼容原则忽略，格式错误、索引乱序、截断和不合法终态返回结构化上游错误。真实 Provider 与 Claude Code 联调仍未完成。
 
 ### POST /v1/responses
 

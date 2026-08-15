@@ -75,7 +75,7 @@ func New(kind string) (*Adapter, error) {
 }
 func (value *Adapter) Type() string { return value.kind }
 func (*Adapter) Metadata() adapter.Metadata {
-	return adapter.Metadata{SupportedAuthTypes: []provider.AuthType{provider.AuthTypeAPIKey, provider.AuthTypeBearerToken, provider.AuthTypeOAuth}, IngressProtocols: []adapter.IngressProtocol{adapter.IngressAnthropic, adapter.IngressOpenAIChat}, Capabilities: provider.Capabilities{Tools: true}, ProtectedHeaders: []string{"Authorization", "X-API-Key", "Anthropic-Version", "Anthropic-Beta"}, SupportsDiscovery: false}
+	return adapter.Metadata{SupportedAuthTypes: []provider.AuthType{provider.AuthTypeAPIKey, provider.AuthTypeBearerToken, provider.AuthTypeOAuth}, IngressProtocols: []adapter.IngressProtocol{adapter.IngressAnthropic, adapter.IngressOpenAIChat}, Capabilities: provider.Capabilities{Streaming: true, Tools: true}, ProtectedHeaders: []string{"Authorization", "X-API-Key", "Anthropic-Version", "Anthropic-Beta"}, SupportsDiscovery: false}
 }
 func (*Adapter) ConfigSchema() json.RawMessage            { return Schema() }
 func (*Adapter) ValidateConfig(raw json.RawMessage) error { _, err := ParseConfig(raw); return err }
@@ -150,8 +150,8 @@ func (value *Adapter) ParseResponse(ctx context.Context, route routing.RoutePlan
 	}
 	return normalize.NormalizedResponse{ID: body.ID, Model: body.Model, Parts: parts, Usage: normalizeUsage(body.Usage), FinishReason: mapFinish(body.StopReason)}, nil
 }
-func (value *Adapter) ParseStream(context.Context, routing.RoutePlan, *http.Response, normalize.StreamEmitter) error {
-	return adapterError("unsupported_feature", "该 Anthropic 兼容服务尚未启用流式协议", http.StatusBadRequest, false, "", nil)
+func (value *Adapter) ParseStream(ctx context.Context, route routing.RoutePlan, response *http.Response, emitter normalize.StreamEmitter) error {
+	return parseAnthropicStream(ctx, route, response, emitter)
 }
 func (value *Adapter) Test(ctx context.Context, client adapter.UpstreamClient, runtime adapter.ProviderRuntime, credential adapter.Credential, kind adapter.CapabilityTestKind) adapter.CapabilityTestResult {
 	return adapter.CapabilityTestResult{Code: "unsupported_feature", Message: "该测试类型尚未支持"}
@@ -163,6 +163,7 @@ func Register(registry *adapter.Registry) error {
 type messagesRequest struct {
 	Model         string      `json:"model"`
 	MaxTokens     *int64      `json:"max_tokens"`
+	Stream        bool        `json:"stream,omitempty"`
 	System        []textBlock `json:"system,omitempty"`
 	Messages      []message   `json:"messages"`
 	Tools         []tool      `json:"tools,omitempty"`
@@ -188,10 +189,10 @@ func buildBody(model string, input normalize.NormalizedRequest) (messagesRequest
 	if input.MaxOutputTokens == nil || *input.MaxOutputTokens < 1 {
 		return messagesRequest{}, errors.New("Anthropic 请求必须包含 max_tokens")
 	}
-	if input.Stream || input.ParallelToolCalls {
-		return messagesRequest{}, errors.New("流式或并行 Tool 尚未支持")
+	if input.ParallelToolCalls {
+		return messagesRequest{}, errors.New("并行 Tool 尚未支持")
 	}
-	result := messagesRequest{Model: model, MaxTokens: input.MaxOutputTokens, Temperature: input.Temperature, StopSequences: input.StopSequences}
+	result := messagesRequest{Model: model, MaxTokens: input.MaxOutputTokens, Stream: input.Stream, Temperature: input.Temperature, StopSequences: input.StopSequences}
 	for _, part := range input.System {
 		result.System = append(result.System, textBlock{Type: "text", Text: part.Text})
 	}

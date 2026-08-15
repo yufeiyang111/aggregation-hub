@@ -138,17 +138,17 @@ Expected: PASS。Suggested commit when authorized: `feat(adapter): add Anthropic
 
 **Interfaces:** Produces valid Anthropic SSE sequence；consumes `NormalizedEvent` and cancellation context。
 
-- [ ] **Step 1: 写任意分块失败测试**
+- [x] **Step 1: 写任意分块失败测试**
 
-Fixture 覆盖 `message_start`、`content_block_start`、`text_delta`、`input_json_delta`、`thinking_delta`、`content_block_stop`、`message_delta`、`message_stop`，并在任意 TCP 边界切块。
+已覆盖 `message_start`、`content_block_start`、`text_delta`、`input_json_delta`、`content_block_stop`、`message_delta`、`message_stop`，并用 7 字节分块 Reader 模拟任意读取边界；Thinking 负向行为由结构化错误分支覆盖。
 
-- [ ] **Step 2: 写事件状态机测试**
+- [x] **Step 2: 写事件状态机测试**
 
-断言单一 start/stop、内容块索引递增、Tool JSON 在块结束后才解析、截断流产生 typed error、terminal event 只能出现一次。
+已断言单一 start/stop、内容块索引递增、Tool JSON 增量映射、截断流 typed error、消息终态顺序，以及未知顶层事件的前向兼容处理。
 
-- [ ] **Step 3: 实现上下游状态机**
+- [x] **Step 3: 实现上下游状态机**
 
-上游 Parser 转成 `NormalizedEvent`，Ingress Serializer 再输出 Anthropic SSE；不得缓存完整响应或记录 Tool 参数。
+上游 Parser 转成 `NormalizedEvent`，Ingress Serializer 再输出 Anthropic SSE；文本和 Tool 参数按增量传递，不缓存完整响应或记录 Tool 参数。Thinking、未知内容块和未知内容增量能力不静默丢弃，返回结构化不支持错误。
 
 - [ ] **Step 4: 验证取消和背压**
 
@@ -161,7 +161,7 @@ cd apps/core
 go test ./internal/adapter/anthropic ./internal/ingress/anthropic -v -race
 ```
 
-Expected: PASS。Suggested commit when authorized: `feat(stream): support Anthropic tools and thinking`。
+定向验证已通过：`go test ./internal/adapter/anthropic ./internal/ingress/anthropic -v`。未运行 `-race`，因为本仓库 Windows Go race 链接器存在已知环境阻塞；完整门禁将在阶段提交前运行。Suggested commit: `feat(stream): 支持 Anthropic SSE 文本与工具调用`。
 
 ---
 

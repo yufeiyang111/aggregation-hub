@@ -108,7 +108,7 @@ func TestHandlerRejectsInvalidAndUnsupportedRequests(t *testing.T) {
 		{name: "未知字段", body: `{"model":"bundle/model","max_tokens":1,"messages":[{"role":"user","content":"你好"}],"danger":true}`, wantCode: http.StatusBadRequest, wantType: "invalid_request_error"},
 		{name: "角色无效", body: `{"model":"bundle/model","max_tokens":1,"messages":[{"role":"system","content":"你好"}]}`, wantCode: http.StatusBadRequest, wantType: "invalid_request_error"},
 		{name: "图片未支持", body: `{"model":"bundle/model","max_tokens":1,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64"}}]}]}`, wantCode: http.StatusBadRequest, wantType: "unsupported_feature"},
-		{name: "流式未支持", body: `{"model":"bundle/model","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"你好"}]}`, wantCode: http.StatusBadRequest, wantType: "unsupported_feature"},
+		{name: "Thinking 未支持", body: `{"model":"bundle/model","max_tokens":1,"thinking":{"type":"enabled","budget_tokens":1},"messages":[{"role":"user","content":"你好"}]}`, wantCode: http.StatusBadRequest, wantType: "unsupported_feature"},
 		{name: "孤立工具结果", body: `{"model":"bundle/model","max_tokens":1,"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_missing","content":"结果"}]}]}`, wantCode: http.StatusBadRequest, wantType: "invalid_request_error"},
 		{name: "无工具的工具选择", body: `{"model":"bundle/model","max_tokens":1,"tool_choice":{"type":"any"},"messages":[{"role":"user","content":"你好"}]}`, wantCode: http.StatusBadRequest, wantType: "invalid_request_error"},
 	}
@@ -191,5 +191,67 @@ func (cancelledGateway) Complete(context.Context, normalize.NormalizedRequest) (
 }
 
 func (cancelledGateway) Stream(context.Context, normalize.NormalizedRequest, normalize.StreamEmitter) error {
+	return nil
+}
+
+func TestHandlerStreamsAnthropicMessagesTextAndToolEvents(t *testing.T) {
+	handler, err := anthropic.NewHandler(anthropicStreamGateway{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"bundle/model","max_tokens":32,"stream":true,"messages":[{"role":"user","content":"你好"}]}`))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	body := response.Body.String()
+	for _, expected := range []string{
+		"event: message_start",
+		`"type":"message_start"`,
+		"event: content_block_start",
+		`"type":"text"`,
+		"event: content_block_delta",
+		`"type":"text_delta"`,
+		`"text":"分块文本"`,
+		`"type":"tool_use"`,
+		`"type":"input_json_delta"`,
+		`"partial_json":"{\"path\":\"a.txt\"}"`,
+		"event: content_block_stop",
+		"event: message_delta",
+		`"stop_reason":"tool_use"`,
+		"event: message_stop",
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("缺少 SSE 事件 %q: %s", expected, body)
+		}
+	}
+	if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("SSE 响应错误 status=%d headers=%v body=%s", response.Code, response.Header(), body)
+	}
+}
+
+type anthropicStreamGateway struct{}
+
+func (anthropicStreamGateway) Complete(context.Context, normalize.NormalizedRequest) (normalize.NormalizedResponse, error) {
+	return normalize.NormalizedResponse{}, nil
+}
+
+func (anthropicStreamGateway) Stream(ctx context.Context, _ normalize.NormalizedRequest, emit normalize.StreamEmitter) error {
+	events := []normalize.NormalizedEvent{
+		normalize.ResponseStartEvent{ResponseID: "msg_stream", Model: "bundle/model"},
+		normalize.ContentStartEvent{ContentID: "text_0", Kind: normalize.PartKindText},
+		normalize.TextDeltaEvent{ContentID: "text_0", Text: "分块文本"},
+		normalize.ContentEndEvent{ContentID: "text_0"},
+		normalize.ContentStartEvent{ContentID: "tool_1", Kind: normalize.PartKindToolCall},
+		normalize.ToolCallStartEvent{ContentID: "tool_1", CallID: "toolu_1", Name: "read_file"},
+		normalize.ToolCallArgumentsDeltaEvent{ContentID: "tool_1", CallID: "toolu_1", Delta: `{"path":"a.txt"}`},
+		normalize.ContentEndEvent{ContentID: "tool_1"},
+		normalize.ResponseEndEvent{FinishReason: normalize.FinishReasonToolCalls},
+	}
+	for _, event := range events {
+		if err := emit.Emit(ctx, event); err != nil {
+			return err
+		}
+	}
 	return nil
 }

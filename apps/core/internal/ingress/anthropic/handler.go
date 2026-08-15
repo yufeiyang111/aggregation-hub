@@ -43,7 +43,7 @@ func (value *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	if normalized.Stream {
-		writeError(writer, http.StatusBadRequest, "unsupported_feature", "当前版本尚未支持 Anthropic 流式响应")
+		value.serveStream(writer, request, normalized)
 		return
 	}
 	result, err := value.gateway.Complete(request.Context(), normalized)

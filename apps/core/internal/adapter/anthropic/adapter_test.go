@@ -20,12 +20,13 @@ func TestAdapterBuildsMessagesRequestAndParsesResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	upstream, err := value.BuildRequest(context.Background(), routing.RoutePlan{ProviderID: "provider_1", BaseURL: "https://provider.example/api", UpstreamModelID: "claude-model"}, normalize.NormalizedRequest{Model: "bundle/model", MaxOutputTokens: int64ptr(128), System: []normalize.TextPart{{Text: "规则"}}, Messages: []normalize.Message{{Role: normalize.RoleUser, Parts: []normalize.ContentPart{normalize.TextPart{Text: "你好"}}}}}, adapter.Credential{AuthType: provider.AuthTypeAPIKey, Secret: credential.SecretValue{Bytes: []byte("test-secret")}})
+	upstream, err := value.BuildRequest(context.Background(), routing.RoutePlan{ProviderID: "provider_1", BaseURL: "https://provider.example/api", UpstreamModelID: "claude-model"}, normalize.NormalizedRequest{Model: "bundle/model", MaxOutputTokens: int64ptr(128), Stream: true, System: []normalize.TextPart{{Text: "规则"}}, Messages: []normalize.Message{{Role: normalize.RoleUser, Parts: []normalize.ContentPart{normalize.TextPart{Text: "你好"}}}}}, adapter.Credential{AuthType: provider.AuthTypeAPIKey, Secret: credential.SecretValue{Bytes: []byte("test-secret")}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if upstream.URL.Path != "/v1/messages" || upstream.Header.Get("X-API-Key") != "test-secret" || upstream.Header.Get("Anthropic-Version") != "2023-06-01" || !strings.Contains(readBody(t, upstream.Body), `"max_tokens":128`) {
-		t.Fatalf("请求错误 url=%s headers=%v", upstream.URL, upstream.Header)
+	body := readBody(t, upstream.Body)
+	if upstream.URL.Path != "/v1/messages" || upstream.Header.Get("X-API-Key") != "test-secret" || upstream.Header.Get("Anthropic-Version") != "2023-06-01" || !strings.Contains(body, `"max_tokens":128`) || !strings.Contains(body, `"stream":true`) {
+		t.Fatalf("请求错误 url=%s headers=%v body=%s", upstream.URL, upstream.Header, body)
 	}
 	response, err := value.ParseResponse(context.Background(), routing.RoutePlan{ProviderID: "provider_1"}, &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"msg_1","model":"claude-model","content":[{"type":"text","text":"完成"},{"type":"tool_use","id":"toolu_1","name":"read_file","input":{"path":"a.txt"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":2}}`))})
 	if err != nil || response.FinishReason != normalize.FinishReasonToolCalls || len(response.Parts) != 2 {
