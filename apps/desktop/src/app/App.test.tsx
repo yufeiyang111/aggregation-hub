@@ -20,7 +20,7 @@ const runningDashboard = {
     state: "running" as const,
     data_plane_url: "http://127.0.0.1:18443",
     started_at: null,
-    version: "0.1.0-rc.3",
+    version: "0.1.0-rc.4",
     last_error: null,
   },
   providers: [

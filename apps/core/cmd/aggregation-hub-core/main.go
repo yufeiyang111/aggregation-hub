@@ -32,7 +32,7 @@ const bootstrapStdinFlag = "--bootstrap-stdin"
 func main() { os.Exit(run(os.Args, os.Stdin, os.Stdout, os.Stderr)) }
 
 func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
-	return runWithRuntime(args, stdin, stdout, stderr, config.Runtime{Version: "0.1.0-rc.3", ListenPort: 18443})
+	return runWithRuntime(args, stdin, stdout, stderr, config.Runtime{Version: "0.1.0-rc.4", ListenPort: 18443})
 }
 
 func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, cfg config.Runtime) int {

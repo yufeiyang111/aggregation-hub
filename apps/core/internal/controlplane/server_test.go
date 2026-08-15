@@ -15,7 +15,7 @@ const testManagementToken = "0123456789abcdef0123456789abcdef"
 
 func TestControlPlaneRequiresFixedManagementTokenAndDoesNotSetCORS(t *testing.T) {
 	server, err := controlplane.NewServer(controlplane.Options{ManagementToken: testManagementToken, Runtime: func() controlplane.RuntimeStatus {
-		return controlplane.RuntimeStatus{State: "running", DataPlaneURL: "http://127.0.0.1:18443", StartedAt: "2026-08-14T00:00:00Z", Version: "0.1.0-rc.3"}
+		return controlplane.RuntimeStatus{State: "running", DataPlaneURL: "http://127.0.0.1:18443", StartedAt: "2026-08-14T00:00:00Z", Version: "0.1.0-rc.4"}
 	}, Shutdown: func(context.Context) error { return nil }})
 	if err != nil {
 		t.Fatalf("创建 Control Plane 失败: %v", err)
