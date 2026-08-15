@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Aggregation Hub Core Control Plane
-  version: 0.1.0-rc.2
+  version: 0.1.0-rc.3
   description: >-
     Core Control Plane 的最小运行时状态契约。响应只包含非敏感运行时元数据；
     管理令牌、Provider 凭据、数据库路径和请求正文不属于此契约。
