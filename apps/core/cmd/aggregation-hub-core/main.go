@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"aggregationhub.local/core/internal/adapter"
+	anthropicadapter "aggregationhub.local/core/internal/adapter/anthropic"
 	openaiadapter "aggregationhub.local/core/internal/adapter/openai"
 	"aggregationhub.local/core/internal/bootstrap"
 	"aggregationhub.local/core/internal/config"
@@ -100,6 +101,10 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 	registry := adapter.NewRegistry()
 	if err := openaiadapter.Register(registry); err != nil {
 		logger.Print("OpenAI Adapter 注册失败")
+		return 1
+	}
+	if err := anthropicadapter.Register(registry); err != nil {
+		logger.Print("Anthropic Adapter 注册失败")
 		return 1
 	}
 	gate, err := gateway.New(router, credentialStore, registry, transport.NewFactory(security.NetworkPolicy{}, transport.Options{}))
