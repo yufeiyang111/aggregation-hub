@@ -1,6 +1,6 @@
 [package]
 name = "aggregation-hub-desktop"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 description = "Aggregation Hub 本地 LLM 聚合网关桌面控制面"
 authors = ["Aggregation Hub Contributors"]
 edition = "2021"

@@ -309,12 +309,12 @@ func TestHandlerReturnsMinimalHealth(t *testing.T) {
     req := httptest.NewRequest(http.MethodGet, "/health", nil)
     rec := httptest.NewRecorder()
 
-    health.NewHandler("0.1.0-rc.1").ServeHTTP(rec, req)
+    health.NewHandler("0.1.0-rc.2").ServeHTTP(rec, req)
 
     if rec.Code != http.StatusOK { t.Fatalf("status=%d", rec.Code) }
     var body map[string]string
     if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil { t.Fatal(err) }
-    if body["status"] != "ok" || body["version"] != "0.1.0-rc.1" || body["data_plane"] != "ready" {
+    if body["status"] != "ok" || body["version"] != "0.1.0-rc.2" || body["data_plane"] != "ready" {
         t.Fatalf("unexpected body: %#v", body)
     }
     if len(body) != 3 { t.Fatalf("health leaked fields: %#v", body) }
@@ -421,7 +421,7 @@ import (
 )
 
 func main() {
-    cfg := config.Runtime{Version: "0.1.0-rc.1", ListenPort: 18443}
+    cfg := config.Runtime{Version: "0.1.0-rc.2", ListenPort: 18443}
     mux := http.NewServeMux()
     mux.Handle("GET /health", health.NewHandler(cfg.Version))
     server := dataplane.NewServer(cfg, mux)
@@ -759,7 +759,7 @@ Create `contracts/fixtures/runtime.json` with intentionally invalid state `"boot
   "state": "running",
   "data_plane_url": "http://127.0.0.1:18443",
   "started_at": "2026-08-02T10:00:00Z",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "last_error": null
 }
 ```
