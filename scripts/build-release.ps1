@@ -81,7 +81,8 @@ function Assert-InstallerDoesNotContainKnownSecretMarkers {
         throw "安装器大小异常：$($Installer.Length) 字节"
     }
 
-    $text = [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($Installer.FullName))
+    # 使用 28591（ISO-8859-1）而非 .NET Core 专属的 ::Latin1，兼容 Windows PowerShell 5.1。
+    $text = [System.Text.Encoding]::GetEncoding(28591).GetString([System.IO.File]::ReadAllBytes($Installer.FullName))
     $patterns = @(
         @{ Name = 'Local Access Key'; Pattern = '\bah_local_[A-Za-z0-9_-]{24,}\b' },
         @{ Name = 'OpenAI 风格 API Key'; Pattern = '\bsk-[A-Za-z0-9_-]{20,}\b' },
