@@ -298,3 +298,30 @@ type PublicModel struct {
 type PublicModelReader interface {
 	ListPublic(context.Context) ([]PublicModel, error)
 }
+
+type HealthCheckType string
+
+const (
+	HealthCheckConnection HealthCheckType = "connection"
+	HealthCheckModels     HealthCheckType = "models"
+	HealthCheckCompletion HealthCheckType = "completion"
+)
+
+type HealthCheckStatus string
+
+const (
+	HealthCheckSucceeded HealthCheckStatus = "succeeded"
+	HealthCheckFailed    HealthCheckStatus = "failed"
+	HealthCheckSkipped   HealthCheckStatus = "skipped"
+)
+
+// HealthCheck 是可保留的脱敏检查记录，不含请求或响应正文。
+type HealthCheck struct {
+	ID         string
+	ProviderID string
+	CheckType  HealthCheckType
+	Status     HealthCheckStatus
+	LatencyMS  *int64
+	ErrorCode  string
+	CheckedAt  time.Time
+}
