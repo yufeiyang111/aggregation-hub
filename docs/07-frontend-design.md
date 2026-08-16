@@ -96,9 +96,9 @@ Provider 详情含概览、模型、健康、用量和设置。危险区包含�
 
 顶部显示 Data Plane URL、现有 Key 的前后缀、创建新 Key、健康和鉴权测试。
 
-Claude Code 页：Base URL、Local Key 环境变量占位符、模型 ID、Messages/Tool 测试。Codex 页：自定义 Provider、Responses wire API、认证环境变量、模型和 Tool 测试。
+Claude Code 页：Base URL、Local Key 环境变量占位符、模型 ID、Messages/Tool 测试。Codex 页：用户级 `config.toml` Provider 模板、Responses wire API、临时环境变量、Public Model ID，以及由用户显式触发的回环文本/Function 诊断。
 
-现有 Local Key 只保存哈希，应用不能再次显示完整值。用户复制带占位符的模板，或创建新 Key 并在当前页面一次性复制完整配置。模板由受测试生成器生成，不能散落硬编码字符串。
+现有 Local Key 只保存哈希，应用不能再次显示完整值。用户复制带占位符的模板，或创建新 Key 并在当前页面一次性复制完整配置。模板由受测试生成器生成，不能散落硬编码字符串；V1 不自动改写 `~/.codex/config.toml` 或系统环境变量。
 
 ## 9. 请求记录
 

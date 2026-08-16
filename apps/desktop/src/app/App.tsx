@@ -1,5 +1,8 @@
 import { type ChangeEvent, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CodexSetupPage } from "../features/connections/CodexSetupPage";
 import { desktopApi, type CreateManualModelInput, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelLimitOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
+
+type LocalResponsesTestResult = import("../lib/desktop-api").LocalResponsesTestResult;
 
 type PageID = "services" | "models" | "clients" | "logs" | "settings";
 type CopyState = "idle" | "copied" | "failed";
@@ -299,6 +302,14 @@ function ClientConfigPage({
   onCreateKey,
   onCopyKey,
   onCopyAddress,
+  codexModelID,
+  codexCopyState,
+  onCodexModelIDChange,
+  onCopyCodexConfig,
+  canTest,
+  testPending,
+  testResult,
+  onTest,
 }: {
   runtime: RuntimeSnapshot | undefined;
   actionPending: boolean;
@@ -310,6 +321,14 @@ function ClientConfigPage({
   onCreateKey: () => void;
   onCopyKey: () => void;
   onCopyAddress: () => void;
+  codexModelID: string;
+  codexCopyState: CopyState;
+  onCodexModelIDChange: (value: string) => void;
+  onCopyCodexConfig: (value: string) => void;
+  canTest: boolean;
+  testPending: boolean;
+  testResult: LocalResponsesTestResult | null;
+  onTest: (kind: "text" | "function") => void;
 }) {
   const isRunning = runtime?.state === "running";
 
@@ -358,6 +377,7 @@ function ClientConfigPage({
             </div>
           ) : null}
         </section>
+        <CodexSetupPage dataPlaneURL={runtime?.data_plane_url ?? undefined} publicModelID={codexModelID} copyState={codexCopyState} onPublicModelIDChange={onCodexModelIDChange} onCopyConfig={onCopyCodexConfig} onCopyPowerShell={onCopyCodexConfig} canTest={canTest} testPending={testPending} testResult={testResult} onTest={onTest} />
       </div>
     </section>
   );
@@ -749,6 +769,10 @@ export function App() {
   const [oneTimeKey, setOneTimeKey] = useState<OneTimeLocalKey | null>(null);
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const [addressCopyState, setAddressCopyState] = useState<CopyState>("idle");
+  const [codexModelID, setCodexModelID] = useState("");
+  const [codexCopyState, setCodexCopyState] = useState<CopyState>("idle");
+  const [codexTestPending, setCodexTestPending] = useState(false);
+  const [codexTestResult, setCodexTestResult] = useState<LocalResponsesTestResult | null>(null);
   const [modelsPage, setModelsPage] = useState<ModelPageData | null>(null);
   const [modelsFetched, setModelsFetched] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
@@ -1167,13 +1191,33 @@ export function App() {
     void copyText(runtime.data_plane_url, setAddressCopyState);
   }, [copyText, runtime?.data_plane_url]);
 
+  const handleCopyCodexConfig = useCallback((value: string) => {
+    void copyText(value, setCodexCopyState);
+  }, [copyText]);
+
+  const handleTestCodexResponses = useCallback(async (kind: "text" | "function") => {
+    if (!oneTimeKey || codexModelID.trim() === "") {
+      setError("请先创建 Local Key 并填写 Public Model ID");
+      return;
+    }
+    setCodexTestPending(true);
+    setCodexTestResult(null);
+    try {
+      setCodexTestResult(await desktopApi.testLocalResponses({ local_key: oneTimeKey.key, model: codexModelID.trim(), kind }));
+    } catch (reason) {
+      setError(safeMessage(reason, "本地 Responses 测试失败"));
+    } finally {
+      setCodexTestPending(false);
+    }
+  }, [codexModelID, oneTimeKey]);
+
   const renderPage = () => {
     if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestEdit={setEditingProvider} onRequestDelete={handleRequestProviderDelete} />;
     if (activePage === "models") {
       return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} onRequestEdit={setEditingModel} onRequestEditLimits={setEditingModelLimits} onRequestDelete={(model) => setPendingModelDelete({ model })} onCreateManual={() => setManualModelCreateOpen(true)} providers={dashboard?.providers ?? []} />;
     }
     if (activePage === "clients") {
-      return <ClientConfigPage runtime={runtime} actionPending={actionPending} keyName={keyName} oneTimeKey={oneTimeKey} copyState={copyState} addressCopyState={addressCopyState} onKeyNameChange={setKeyName} onCreateKey={handleCreateKey} onCopyKey={handleCopyKey} onCopyAddress={handleCopyAddress} />;
+      return <ClientConfigPage runtime={runtime} actionPending={actionPending} keyName={keyName} oneTimeKey={oneTimeKey} copyState={copyState} addressCopyState={addressCopyState} onKeyNameChange={setKeyName} onCreateKey={handleCreateKey} onCopyKey={handleCopyKey} onCopyAddress={handleCopyAddress} codexModelID={codexModelID} codexCopyState={codexCopyState} onCodexModelIDChange={setCodexModelID} onCopyCodexConfig={handleCopyCodexConfig} canTest={oneTimeKey !== null && codexModelID.trim() !== ""} testPending={codexTestPending} testResult={codexTestResult} onTest={handleTestCodexResponses} />;
     }
     if (activePage === "logs") return <EmptyState title="日志尚未接入" description="请求日志和诊断信息需要后端观察能力完成后才能安全显示。" />;
     return <SettingsPage runtime={runtime} loading={loading} actionPending={actionPending} onRefresh={handleRefresh} onStartOrRestart={handleStartOrRestart} />;

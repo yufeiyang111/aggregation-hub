@@ -119,7 +119,7 @@ Provider/模型可路由状态、软删除后的 slug 策略、凭据替换/删�
 
 ## 9. 客户端接入
 
-Claude Code 页面生成 Base URL、Key 环境变量占位符、模型 ID 和 Messages/Tool 测试。Codex 页面生成自定义 Model Provider、Responses wire API、认证环境变量和模型配置。
+Claude Code 页面生成 Base URL、Key 环境变量占位符、模型 ID 和 Messages/Tool 测试。Codex 页面生成自定义 Model Provider、Responses wire API、认证环境变量和模型配置；本地诊断仅在用户点击且当前页面持有新建的一次性 Key 时执行，测试请求只发往回环网关且不保存 Key、Prompt、Tool 参数或响应正文。
 
 已有 Local Key 只保存哈希，无法再次显示完整值。用户可复制带占位符模板，或创建新 Key 并在当前页面一次性复制完整配置。V1 不自动修改第三方配置文件。
 

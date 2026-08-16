@@ -141,26 +141,26 @@ Expected: PASS。定向测试与仓库全量门禁已通过；Windows race 链�
 **Files:**
 - Create: `apps/desktop/src/features/connections/codexConfig.ts`
 - Create: `apps/desktop/src/features/connections/codexConfig.test.ts`
-- Create: `apps/desktop/src/pages/CodexSetupPage.tsx`
-- Create: `apps/desktop/src/pages/CodexSetupPage.test.tsx`
-- Modify: `apps/desktop/src/app/router.tsx`
+- Create: `apps/desktop/src/features/connections/CodexSetupPage.tsx`
+- Create: `apps/desktop/src/features/connections/CodexSetupPage.test.tsx`
+- Modify: `apps/desktop/src/app/App.tsx`（当前导航事实源）
 - Modify: `docs/references.md`
 
 **Interfaces:** Produces current `config.toml` Provider snippet and environment-variable instructions。
 
-- [ ] **Step 1: 刷新官方配置证据**
+- [x] **Step 1: 刷新官方配置证据**
 
-核对 Codex 当前自定义 Provider 配置；把 `model_providers.<id>.base_url`、认证环境变量和 `wire_api="responses"` 等字段记录为带日期 Fixture。
+已核对 Codex 官方 Config Reference 并在 `docs/references.md` 记录 2026-08-16；受测生成器固定 `model_provider`、`base_url`、`env_key`、`requires_openai_auth=false` 和 `wire_api="responses"`。
 
-- [ ] **Step 2: 写纯函数快照测试**
+- [x] **Step 2: 写纯函数快照测试**
 
 使用 Provider ID `aggregation_hub`、本地 URL、环境模板变量和 Public Model ID；覆盖 PowerShell 示例与转义规则。
 
-- [ ] **Step 3: 实现 UI 四态和安全复制**
+- [x] **Step 3: 实现 UI 四态和安全复制**
 
-提供配置复制、本地鉴权、Responses 文本和 Function 测试；不自动写用户配置；已有 Local Key 不重新展示，新 Key 只允许一次完整复制。
+提供配置复制、临时 PowerShell 环境变量、本地鉴权和用户显式触发的 Responses 文本/Function 诊断；诊断仅允许回环地址并只临时使用当前页面的新建 Key。不会自动写用户配置、系统环境变量或保存秘密/请求正文。
 
-- [ ] **Step 4: 验证**
+- [x] **Step 4: 验证**
 
 ```powershell
 pnpm web:typecheck
@@ -168,7 +168,7 @@ pnpm web:lint
 pnpm web:test
 ```
 
-Expected: PASS。Suggested commit when authorized: `feat(desktop): add Codex connection guide`。
+Expected: PASS。前端 typecheck/lint/18 项测试、Rust 16 项测试和仓库全量门禁已通过；未执行真实 Codex 或真实 Provider 测试。
 
 ---
 

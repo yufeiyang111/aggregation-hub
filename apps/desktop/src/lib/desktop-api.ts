@@ -165,6 +165,20 @@ export interface OneTimeLocalKey {
   display_once: true;
 }
 
+export interface LocalResponsesTestInput {
+  local_key: string;
+  model: string;
+  kind: "text" | "function";
+}
+
+export interface LocalResponsesTestResult {
+  success: boolean;
+  kind: "text" | "function";
+  code: string;
+  message: string;
+  http_status: number;
+}
+
 export const desktopApi = {
   dashboard: () => invoke<DashboardSnapshot>("dashboard_status"),
   createProvider: (input: CreateProviderInput) => invoke<ProviderSummary>("create_provider", { input }),
@@ -182,6 +196,7 @@ export const desktopApi = {
   enableModel: (id: string, version: number) => invoke<ModelSummary>("enable_model", { id, version }),
   disableModel: (id: string, version: number) => invoke<ModelSummary>("disable_model", { id, version }),
   createLocalKey: (name: string) => invoke<OneTimeLocalKey>("create_local_key", { name }),
+  testLocalResponses: (input: LocalResponsesTestInput) => invoke<LocalResponsesTestResult>("test_local_responses", { input }),
   start: () => invoke<RuntimeSnapshot>("runtime_start"),
   stop: () => invoke<RuntimeSnapshot>("runtime_stop"),
   restart: () => invoke<RuntimeSnapshot>("runtime_restart"),

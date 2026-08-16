@@ -22,7 +22,7 @@
 
 ## Codex 与 OpenAI
 
-- Codex Config Reference：https://developers.openai.com/codex/config-reference
+- **2026-08-16 已核对（OpenAI 官方）**：Codex Config Reference：https://developers.openai.com/codex/config-reference
 - Responses API：https://developers.openai.com/api/reference/responses
 - Function Calling：https://developers.openai.com/api/docs/guides/function-calling
 - **2026-08-16 已核对（OpenAI 官方）**：Streaming Responses：https://developers.openai.com/api/docs/guides/streaming-responses

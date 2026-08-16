@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use tauri::{AppHandle, State};
 
 use crate::core_process::{
@@ -5,6 +6,7 @@ use crate::core_process::{
     ModelListQuery, ModelPage, ModelSummary, OneTimeLocalKey, ProviderSummary, ProviderTestResult,
     RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput, UpdateProviderInput,
 };
+use crate::data_plane_client::{self, LocalResponsesTestResult};
 
 #[tauri::command]
 pub async fn runtime_status(
@@ -32,6 +34,36 @@ pub async fn create_local_key(
     tauri::async_runtime::spawn_blocking(move || manager.create_local_key(name))
         .await
         .map_err(|_| "创建 Local Key 失败".to_owned())?
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalResponsesTestInput {
+    pub local_key: String,
+    pub model: String,
+    pub kind: String,
+}
+
+#[tauri::command]
+pub async fn test_local_responses(
+    input: LocalResponsesTestInput,
+    state: State<'_, CoreProcessManager>,
+) -> Result<LocalResponsesTestResult, String> {
+    let runtime = state.status()?;
+    let data_plane_url = runtime
+        .data_plane_url
+        .ok_or_else(|| "本地网关尚未启动".to_owned())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut local_key = input.local_key.into_bytes();
+        data_plane_client::test_responses(
+            &data_plane_url,
+            &mut local_key,
+            &input.model,
+            &input.kind,
+        )
+    })
+    .await
+    .map_err(|_| "本地 Responses 测试失败".to_owned())?
 }
 
 #[tauri::command]
