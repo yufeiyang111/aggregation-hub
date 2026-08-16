@@ -1,0 +1,8 @@
+{
+  "id": "resp_fixture_5",
+  "model": "gpt-fixture",
+  "status": "completed",
+  "output": [
+    {"type": "image_generation_call", "id": "img_1"}
+  ]
+}

@@ -33,7 +33,7 @@ func (value *Adapter) Type() string { return value.kind }
 func (*Adapter) Metadata() adapter.Metadata {
 	return adapter.Metadata{
 		SupportedAuthTypes: []provider.AuthType{provider.AuthTypeAPIKey, provider.AuthTypeBearerToken, provider.AuthTypeOAuth, provider.AuthTypeNone},
-		IngressProtocols:   []adapter.IngressProtocol{adapter.IngressOpenAIChat},
+		IngressProtocols:   []adapter.IngressProtocol{adapter.IngressOpenAIChat, adapter.IngressOpenAIResponses},
 		Capabilities:       provider.Capabilities{Streaming: true, Tools: true},
 		ProtectedHeaders:   []string{"Authorization", "X-API-Key"},
 		SupportsDiscovery:  true,
@@ -105,8 +105,16 @@ func (value *Adapter) BuildRequest(ctx context.Context, route routing.RoutePlan,
 	if err != nil {
 		return nil, adapterError("invalid_provider_config", "服务配置无效", http.StatusBadRequest, false, route.ProviderID, err)
 	}
-	if config.WireAPI != WireAPIChatCompletions {
-		return nil, adapterError("unsupported_feature", "该服务尚未启用 Chat Completions 协议", http.StatusBadRequest, false, route.ProviderID, ErrUnsupportedWireAPI)
+	if config.WireAPI == WireAPIResponses {
+		target, err := resolveRouteURL(route.BaseURL, config.ResponsesPath)
+		if err != nil {
+			return nil, adapterError("invalid_provider_config", "服务地址无效", http.StatusBadRequest, false, route.ProviderID, err)
+		}
+		body, err := buildResponsesBody(route.UpstreamModelID, request)
+		if err != nil {
+			return nil, adapterError("unsupported_feature", "请求包含当前上游不支持的能力", http.StatusBadRequest, false, route.ProviderID, err)
+		}
+		return buildJSONRequest(ctx, target, body, credential, config.AuthHeaderMode, route.ProviderID)
 	}
 	target, err := resolveRouteURL(route.BaseURL, config.ChatCompletionsPath)
 	if err != nil {
@@ -132,9 +140,33 @@ func (value *Adapter) BuildRequest(ctx context.Context, route routing.RoutePlan,
 	return upstream, nil
 }
 
+func buildJSONRequest(ctx context.Context, target *url.URL, body any, credential adapter.Credential, authMode AuthHeaderMode, providerID string) (*http.Request, error) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, adapterError("invalid_request", "请求编码失败", http.StatusBadRequest, false, providerID, err)
+	}
+	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(string(encoded)))
+	if err != nil {
+		return nil, adapterError("invalid_request", "无法创建上游请求", http.StatusBadRequest, false, providerID, err)
+	}
+	upstream.Header.Set("Content-Type", "application/json")
+	upstream.Header.Set("Accept", "application/json")
+	if err := applyCredential(upstream, credential, authMode); err != nil {
+		return nil, adapterError("credential_unavailable", "服务凭据无效", http.StatusBadRequest, false, providerID, err)
+	}
+	return upstream, nil
+}
+
 func (value *Adapter) ParseResponse(ctx context.Context, route routing.RoutePlan, response *http.Response) (normalize.NormalizedResponse, error) {
 	if ctx == nil || response == nil {
 		return normalize.NormalizedResponse{}, adapterError("upstream_invalid_response", "上游服务返回无效响应", http.StatusBadGateway, true, route.ProviderID, nil)
+	}
+	config, err := ParseConfig(route.AdapterConfigJSON)
+	if err != nil {
+		return normalize.NormalizedResponse{}, adapterError("invalid_provider_config", "服务配置无效", http.StatusBadRequest, false, route.ProviderID, err)
+	}
+	if config.WireAPI == WireAPIResponses {
+		return value.parseResponsesResponse(route, response)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return normalize.NormalizedResponse{}, gatewayFromResponse(route.ProviderID, response)

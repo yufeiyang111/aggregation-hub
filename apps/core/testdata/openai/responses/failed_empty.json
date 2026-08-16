@@ -1,0 +1,7 @@
+{
+  "id": "resp_fixture_4",
+  "model": "gpt-fixture",
+  "status": "failed",
+  "output": [],
+  "error": {"code": "server_error"}
+}

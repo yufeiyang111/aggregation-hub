@@ -1,0 +1,21 @@
+{
+  "id": "resp_fixture_1",
+  "model": "gpt-fixture",
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {"type": "output_text", "text": "夹具响应"}
+      ]
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_fixture_1",
+      "name": "lookup",
+      "arguments": "{\"query\":\"fixture\"}"
+    }
+  ],
+  "usage": {"input_tokens": 7, "output_tokens": 4}
+}

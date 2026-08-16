@@ -3,9 +3,11 @@ package openai_responses
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	"aggregationhub.local/core/internal/adapter"
 	"aggregationhub.local/core/internal/normalize"
 )
 
@@ -46,7 +48,37 @@ func (value *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		writeError(writer, http.StatusBadRequest, "invalid_request", "Responses 请求字段无效")
 		return
 	}
-	writeError(writer, http.StatusNotImplemented, "unsupported_feature", "Responses 上游适配器尚未完成")
+	if normalized.Stream {
+		writeError(writer, http.StatusBadRequest, "unsupported_feature", "Responses 流式输出尚未启用")
+		return
+	}
+	result, err := value.gateway.Complete(request.Context(), normalized)
+	if err != nil {
+		writeGatewayError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, renderResponse(result))
+}
+
+func writeGatewayError(writer http.ResponseWriter, err error) {
+	var gatewayErr *adapter.GatewayError
+	if errors.As(err, &gatewayErr) && gatewayErr != nil {
+		status := gatewayErr.HTTPStatus
+		if status < http.StatusBadRequest || status > http.StatusInternalServerError {
+			status = http.StatusBadGateway
+		}
+		code := gatewayErr.Code
+		if code == "" {
+			code = "gateway_error"
+		}
+		message := gatewayErr.SafeMessage
+		if message == "" {
+			message = "请求上游服务失败"
+		}
+		writeError(writer, status, code, message)
+		return
+	}
+	writeError(writer, http.StatusBadGateway, "gateway_error", "请求上游服务失败")
 }
 
 func writeError(writer http.ResponseWriter, status int, code, message string) {

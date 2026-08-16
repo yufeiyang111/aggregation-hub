@@ -71,26 +71,26 @@ go test ./internal/ingress/... ./internal/routing/... -race
 
 **Interfaces:** Produces Responses JSON；OpenAI Adapter supports `wire_api=responses` independently from Chat Completions。
 
-- [ ] **Step 1: 加入非流式 Fixture**
+- [x] **Step 1: 加入非流式 Fixture**
 
-覆盖 output_text、function_call、Reasoning summary、Usage、incomplete、failed、401、429、5xx 和未知字段。
+已加入完整响应、incomplete、failed、reasoning 与未知输出夹具；401、429、5xx 通过上游错误映射测试覆盖。
 
-- [ ] **Step 2: 实现 Responses Request Builder**
+- [x] **Step 2: 实现 Responses Request Builder**
 
 目标路径为 `/v1/responses`；不得先转换为 Chat DTO；Provider Secret 只由 CredentialStore 注入。
 
-- [ ] **Step 3: 实现上游与入口转换**
+- [x] **Step 3: 实现上游与入口转换**
 
-上游 Responses 转为 `NormalizedResponse`，入口再序列化为 response object/status/output items；未知 Usage 使用 `nil`，失败映射稳定安全错误码。
+上游 Responses 转为 `NormalizedResponse`，入口再序列化为 response object/status/output items；未知 Usage 使用 `nil`，失败映射稳定安全错误码，并且不向客户端泄漏上游错误正文。
 
-- [ ] **Step 4: 验证两个 Wire API**
+- [x] **Step 4: 验证两个 Wire API**
 
 ```powershell
 cd apps/core
-go test ./internal/adapter/openai ./internal/ingress/openai_responses -v -race
+go test ./internal/adapter/openai ./internal/ingress/openai_responses -v
 ```
 
-Expected: Chat Completions 与 Responses 契约均 PASS。Suggested commit when authorized: `feat(adapter): support OpenAI Responses wire protocol`。
+Expected: Chat Completions 与 Responses 契约均 PASS。实际已完成定向测试和仓库全量门禁；Windows race 链接问题保留为独立环境风险。
 
 ---
 

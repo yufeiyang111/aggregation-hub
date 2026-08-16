@@ -1,0 +1,11 @@
+{
+  "id": "resp_fixture_3",
+  "model": "gpt-fixture",
+  "status": "completed",
+  "output": [
+    {
+      "type": "reasoning",
+      "summary": [{"type": "summary_text", "text": "内部摘要"}]
+    }
+  ]
+}
