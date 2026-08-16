@@ -138,6 +138,8 @@ Access Token、Refresh Token、PKCE verifier、client secret 不进入 SQLite。
 
 请求：接收时插入 pending；流式开始更新 streaming；终态事务更新请求并 UPSERT 日汇总。启动时把遗留 pending/streaming 更新为 aborted_by_restart。
 
+Task 5.1 已实现 `requests` 的 pending/streaming/单终态事务写入和脱敏元数据仓储；`usage_daily` 的幂等日汇总与费用计算仍属于 Task 5.2。
+
 ### 4.1 Provider 生命周期与凭据补偿
 
 Provider/模型的可路由条件、OAuth 的阶段边界、slug 复用、CredentialStore 清理顺序与同步模型保留规则见 ADR-0006。Provider 删除或替换凭据后的 CredentialStore 清理失败不得回滚已提交的 SQLite 状态；必须写入不含秘密的清理失败审计事件。

@@ -94,6 +94,16 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("模型服务初始化失败")
 		return 1
 	}
+	requestRepository, err := storage.NewRequestRepository(database)
+	if err != nil {
+		logger.Print("请求观测仓储初始化失败")
+		return 1
+	}
+	requestRecorder, err := observability.NewRecorder(requestRepository, observability.RecorderOptions{})
+	if err != nil {
+		logger.Print("请求观测初始化失败")
+		return 1
+	}
 	router, err := routing.New(providerRepository, modelRepository)
 	if err != nil {
 		logger.Print("模型路由初始化失败")
@@ -118,17 +128,17 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("Provider 操作服务初始化失败")
 		return 1
 	}
-	chatHandler, err := openaiingress.NewHandler(gate)
+	chatHandler, err := openaiingress.NewHandler(gate, requestRecorder)
 	if err != nil {
 		logger.Print("Chat 入口初始化失败")
 		return 1
 	}
-	responsesHandler, err := responsesingress.NewHandler(gate)
+	responsesHandler, err := responsesingress.NewHandler(gate, requestRecorder)
 	if err != nil {
 		logger.Print("Responses 入口初始化失败")
 		return 1
 	}
-	messagesHandler, err := anthropicingress.NewHandler(gate)
+	messagesHandler, err := anthropicingress.NewHandler(gate, requestRecorder)
 	if err != nil {
 		logger.Print("Anthropic Messages 入口初始化失败")
 		return 1

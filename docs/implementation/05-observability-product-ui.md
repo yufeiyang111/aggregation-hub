@@ -25,7 +25,8 @@
 
 **Files:**
 - Create: `apps/core/internal/observability/request_event.go`
-- Create: `apps/core/internal/observability/request_state.go`
+- Create: `apps/core/internal/observability/request_event.go`
+- Create: `apps/core/internal/observability/stream.go`
 - Create: `apps/core/internal/observability/request_state_test.go`
 - Create: `apps/core/internal/storage/request_repository.go`
 - Create: `apps/core/internal/storage/request_repository_test.go`
@@ -34,26 +35,26 @@
 
 **Interfaces:** Produces `Recorder.Start/MarkStreaming/Complete/Fail/Cancel` and restart recovery。
 
-- [ ] **Step 1: 写状态转换失败测试**
+- [x] **Step 1: 写状态转换失败测试**
 
-覆盖 pending→streaming→success/fail/cancel、terminal→anything 拒绝、并发完成竞争和 restart recovery。
+已覆盖 pending→streaming→success/fail/cancel、terminal→anything 拒绝、并发完成竞争、流式终态和现有 restart recovery。
 
-- [ ] **Step 2: 定义脱敏事件**
+- [x] **Step 2: 定义脱敏事件**
 
-`RequestEvent` 只含请求 ID、协议、Provider/模型快照、时间、状态、Token、错误类别和耗时；类型中不提供 Body/Header/Tool 参数字段。
+`RequestRecord`/`RequestTransition` 只含请求 ID、协议、Provider/模型快照、时间、状态、Token、错误类别和耗时；类型中不提供 Body/Header/Tool 参数字段。
 
-- [ ] **Step 3: 实现事务与终态 Finalizer**
+- [x] **Step 3: 实现事务与终态 Finalizer**
 
-Repository 使用事务；每个 Ingress 通过单一 Finalizer 保证正好一个终态；启动时只把 pending/streaming 更新为 `aborted_by_restart`。
+Repository 使用事务；三个 Ingress 通过共享的流式终态包装器和生命周期锁保证正好一个终态；启动时继续只把 pending/streaming 更新为 `aborted_by_restart`。Task 5.2 再加入有界异步队列和 `usage_daily` 幂等汇总。
 
-- [ ] **Step 4: 验证**
+- [x] **Step 4: 验证**
 
 ```powershell
 cd apps/core
-go test ./internal/observability ./internal/storage ./internal/ingress/... -v -race
+go test ./internal/observability ./internal/storage ./internal/ingress/... -v
 ```
 
-Expected: PASS。Suggested commit when authorized: `feat(observability): persist request lifecycle metadata`。
+定向普通测试和 `go vet ./...` 已通过；Windows 本机执行 `-race` 时被 Go race runtime 的 PE 链接错误阻塞，未把它记为通过。Suggested commit when authorized: `feat(observability): persist request lifecycle metadata`。
 
 ---
 
@@ -183,7 +184,7 @@ pnpm web:lint
 pnpm web:test
 ```
 
-Expected: PASS。Suggested commit when authorized: `feat(desktop): add request and usage observability pages`。
+定向普通测试和 `go vet ./...` 已通过；Windows 本机执行 `-race` 时被 Go race runtime 的 PE 链接错误阻塞，未把它记为通过。Suggested commit when authorized: `feat(desktop): add request and usage observability pages`。
 
 ---
 

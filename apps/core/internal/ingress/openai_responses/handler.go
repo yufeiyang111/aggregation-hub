@@ -9,6 +9,7 @@ import (
 
 	"aggregationhub.local/core/internal/adapter"
 	"aggregationhub.local/core/internal/normalize"
+	"aggregationhub.local/core/internal/observability"
 )
 
 type gateway interface {
@@ -16,13 +17,32 @@ type gateway interface {
 	Stream(context.Context, normalize.NormalizedRequest, normalize.StreamEmitter) error
 }
 
-type Handler struct{ gateway gateway }
+type Handler struct {
+	gateway  gateway
+	recorder observability.RequestRecorder
+}
 
-func NewHandler(value gateway) (*Handler, error) {
-	if value == nil {
+func NewHandler(value gateway, recorders ...observability.RequestRecorder) (*Handler, error) {
+	if value == nil || len(recorders) > 1 {
 		return nil, ErrInvalidGateway
 	}
-	return &Handler{gateway: value}, nil
+	recorder := observability.NewNoopRecorder()
+	if len(recorders) == 1 {
+		if recorders[0] == nil {
+			return nil, ErrInvalidGateway
+		}
+		recorder = recorders[0]
+	}
+	return &Handler{gateway: value, recorder: recorder}, nil
+}
+
+func (value *Handler) startObservation(request *http.Request, input normalize.NormalizedRequest) observability.RequestLifecycle {
+	lifecycle, err := value.recorder.Start(request.Context(), observability.RequestStart{SourceProtocol: observability.ProtocolOpenAIResponses, Endpoint: "/v1/responses", PublicModelSnapshot: input.Model, Streaming: input.Stream})
+	if err != nil {
+		observability.ReportPersistenceError(err)
+		return observability.NoopRequestLifecycle()
+	}
+	return lifecycle
 }
 
 func (value *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -48,15 +68,19 @@ func (value *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		writeError(writer, http.StatusBadRequest, "invalid_request", "Responses 请求字段无效")
 		return
 	}
+	lifecycle := value.startObservation(request, normalized)
 	if normalized.Stream {
-		value.serveStream(writer, request, normalized)
+		observability.ReportPersistenceError(lifecycle.MarkStreaming(request.Context()))
+		value.serveStream(writer, request, normalized, lifecycle)
 		return
 	}
 	result, err := value.gateway.Complete(request.Context(), normalized)
 	if err != nil {
+		observability.FinishWithError(lifecycle, request.Context(), err)
 		writeGatewayError(writer, err)
 		return
 	}
+	observability.ReportPersistenceError(lifecycle.Complete(request.Context(), observability.Completion{HTTPStatus: http.StatusOK, Usage: result.Usage}))
 	writeJSON(writer, http.StatusOK, renderResponse(result))
 }
 

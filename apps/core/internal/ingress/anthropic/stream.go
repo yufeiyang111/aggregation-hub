@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"aggregationhub.local/core/internal/normalize"
+	"aggregationhub.local/core/internal/observability"
 )
 
 // sseEmitter 将已校验的归一化事件转换为 Anthropic Messages SSE；每次 Emit 同步写入，避免慢客户端产生无界缓冲。
@@ -19,16 +20,20 @@ type sseEmitter struct {
 	next    int
 }
 
-func (value *Handler) serveStream(writer http.ResponseWriter, request *http.Request, input normalize.NormalizedRequest) {
+func (value *Handler) serveStream(writer http.ResponseWriter, request *http.Request, input normalize.NormalizedRequest, lifecycle observability.RequestLifecycle) {
 	writer.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
 	writer.WriteHeader(http.StatusOK)
 
 	emitter := &sseEmitter{writer: writer, indexes: make(map[string]int)}
-	if err := value.gateway.Stream(request.Context(), input, emitter); err != nil {
+	recordedEmitter := observability.NewRecordingStreamEmitter(emitter, lifecycle)
+	if err := value.gateway.Stream(request.Context(), input, recordedEmitter); err != nil {
+		recordedEmitter.Finish(request.Context(), err)
 		_ = emitter.writeError("api_error", "上游流式请求失败")
+		return
 	}
+	recordedEmitter.Finish(request.Context(), nil)
 }
 
 func (value *sseEmitter) Emit(_ context.Context, event normalize.NormalizedEvent) error {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"aggregationhub.local/core/internal/normalize"
+	"aggregationhub.local/core/internal/observability"
 )
 
 type sseEmitter struct {
@@ -17,16 +18,19 @@ type sseEmitter struct {
 	next   int
 }
 
-func (value *Handler) serveStream(writer http.ResponseWriter, request *http.Request, input normalize.NormalizedRequest) {
+func (value *Handler) serveStream(writer http.ResponseWriter, request *http.Request, input normalize.NormalizedRequest, lifecycle observability.RequestLifecycle) {
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
 	writer.WriteHeader(http.StatusOK)
 	emitter := &sseEmitter{writer: writer, index: make(map[string]int)}
-	if err := value.gateway.Stream(request.Context(), input, emitter); err != nil {
+	recordedEmitter := observability.NewRecordingStreamEmitter(emitter, lifecycle)
+	if err := value.gateway.Stream(request.Context(), input, recordedEmitter); err != nil {
+		recordedEmitter.Finish(request.Context(), err)
 		_ = emitter.write(map[string]any{"error": map[string]string{"code": "gateway_error", "message": "上游流式请求失败"}})
 		return
 	}
+	recordedEmitter.Finish(request.Context(), nil)
 	_, _ = fmt.Fprint(writer, "data: [DONE]\n\n")
 }
 func (value *sseEmitter) Emit(_ context.Context, event normalize.NormalizedEvent) error {
