@@ -248,3 +248,8 @@ POST /internal/v1/maintenance/prune
 - OAuth 会话和密钥创建不由 UI 自动重试。
 - 控制面写操作记录不含秘密的审计事件。
 - 外部协议变化必须同步 DTO、Normalized Contract、Adapter、测试和追踪矩阵。
+## 4.12 请求与用量查询（Task 5.4）
+
+Control Plane 新增只读接口：`GET /internal/v1/requests`、`GET /internal/v1/requests/{id}`、`GET /internal/v1/usage/summary` 与 `GET /internal/v1/usage/timeseries`。全部继续使用 Management Token；请求列表固定 `created_at DESC, id DESC` 稳定排序并使用有界 Cursor。响应只含脱敏请求元数据、请求计数、Token 与可为空的缓存命中率基点，不含费用、价格、Prompt、回复正文、Header、Tool 参数、凭据或上游 URL Query。
+
+用量范围使用 RFC3339 UTC 边界，日趋势按 UTC 日期升序；Token 未报告以及不可比较的缓存命中率都以 `null`/界面 `—` 表示，不与真实零值混淆。

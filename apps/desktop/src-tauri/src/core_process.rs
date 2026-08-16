@@ -331,6 +331,85 @@ pub struct ModelListQuery {
     pub search: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RequestMetadata {
+    pub id: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub source_protocol: String,
+    pub provider_slug: String,
+    pub public_model_id: String,
+    pub streaming: bool,
+    pub status: String,
+    pub http_status: Option<i64>,
+    pub error_code: Option<String>,
+    pub retryable: bool,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub cached_input_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
+    pub reasoning_tokens: Option<i64>,
+    pub duration_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RequestPage {
+    pub data: Vec<RequestMetadata>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RequestListQuery {
+    pub cursor: Option<String>,
+    pub page_size: Option<u16>,
+    pub status: Option<String>,
+    pub provider_slug: Option<String>,
+    pub public_model_id: Option<String>,
+    pub source_protocol: Option<String>,
+    pub from_utc: Option<String>,
+    pub to_utc: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct UsageQuery {
+    pub provider_slug: Option<String>,
+    pub public_model_id: Option<String>,
+    pub from_utc: Option<String>,
+    pub to_utc: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UsageSummary {
+    pub request_count: i64,
+    pub succeeded_count: i64,
+    pub failed_count: i64,
+    pub cancelled_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cached_input_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub reasoning_tokens: i64,
+    pub input_token_reported_count: i64,
+    pub output_token_reported_count: i64,
+    pub cached_input_token_reported_count: i64,
+    pub reasoning_token_reported_count: i64,
+    pub cache_eligible_input_tokens: i64,
+    pub cache_eligible_cached_input_tokens: i64,
+    pub cache_hit_rate_basis_points: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UsageTimeSeriesPoint {
+    pub date_utc: String,
+    #[serde(flatten)]
+    pub summary: UsageSummary,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UsageTimeSeries {
+    pub data: Vec<UsageTimeSeriesPoint>,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct OneTimeLocalKey {
     pub id: String,
@@ -548,6 +627,96 @@ impl ReadyEvent {
     }
 }
 
+pub(crate) fn build_request_list_path(query: &RequestListQuery) -> Result<String, String> {
+    if let Some(page_size) = query.page_size {
+        if page_size == 0 || page_size > 100 {
+            return Err("请求分页参数无效".to_owned());
+        }
+    }
+    if let Some(cursor) = query.cursor.as_deref() {
+        if cursor.is_empty()
+            || cursor.len() > 64
+            || !cursor
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err("请求分页游标无效".to_owned());
+        }
+    }
+    if let Some(status) = query.status.as_deref() {
+        if !matches!(
+            status,
+            "pending" | "streaming" | "succeeded" | "failed" | "cancelled" | "aborted_by_restart"
+        ) {
+            return Err("请求状态筛选无效".to_owned());
+        }
+    }
+    if let Some(protocol) = query.source_protocol.as_deref() {
+        if !matches!(
+            protocol,
+            "anthropic_messages" | "openai_responses" | "openai_chat"
+        ) {
+            return Err("请求协议筛选无效".to_owned());
+        }
+    }
+    build_observability_path(
+        "/internal/v1/requests",
+        &[
+            ("cursor", query.cursor.as_deref()),
+            (
+                "page_size",
+                query.page_size.map(|value| value.to_string()).as_deref(),
+            ),
+            ("status", query.status.as_deref()),
+            ("provider_slug", query.provider_slug.as_deref()),
+            ("public_model_id", query.public_model_id.as_deref()),
+            ("source_protocol", query.source_protocol.as_deref()),
+            ("from_utc", query.from_utc.as_deref()),
+            ("to_utc", query.to_utc.as_deref()),
+        ],
+    )
+}
+
+pub(crate) fn build_usage_path(base: &str, query: &UsageQuery) -> Result<String, String> {
+    build_observability_path(
+        base,
+        &[
+            ("provider_slug", query.provider_slug.as_deref()),
+            ("public_model_id", query.public_model_id.as_deref()),
+            ("from_utc", query.from_utc.as_deref()),
+            ("to_utc", query.to_utc.as_deref()),
+        ],
+    )
+}
+
+fn build_observability_path(
+    base: &str,
+    parameters: &[(&str, Option<&str>)],
+) -> Result<String, String> {
+    let mut encoded = Vec::new();
+    for (name, value) in parameters {
+        if let Some(value) = value {
+            if value.is_empty()
+                || value.len() > 512
+                || value.trim() != *value
+                || value.chars().any(char::is_control)
+            {
+                return Err("观测查询参数无效".to_owned());
+            }
+            if (*name == "from_utc" || *name == "to_utc")
+                && (!value.ends_with('Z') || value.len() > 35)
+            {
+                return Err("观测时间范围无效".to_owned());
+            }
+            encoded.push(format!("{name}={}", percent_encode(value)));
+        }
+    }
+    if encoded.is_empty() {
+        Ok(base.to_owned())
+    } else {
+        Ok(format!("{base}?{}", encoded.join("&")))
+    }
+}
 pub(crate) fn build_model_list_path(query: &ModelListQuery) -> Result<String, String> {
     if let Some(page_size) = query.page_size {
         if page_size == 0 || page_size > 200 {
@@ -758,6 +927,44 @@ impl CoreProcessManager {
         )
     }
 
+    pub fn list_requests(&self, query: RequestListQuery) -> Result<RequestPage, String> {
+        let path = build_request_list_path(&query)?;
+        self.get_control_json(&path)
+    }
+
+    pub fn get_request(&self, id: String) -> Result<RequestMetadata, String> {
+        if id.is_empty() || id.len() > 64 || id.chars().any(char::is_control) {
+            return Err("请求标识无效".to_owned());
+        }
+        self.get_control_json(&format!("/internal/v1/requests/{}", percent_encode(&id)))
+    }
+
+    pub fn usage_summary(&self, query: UsageQuery) -> Result<UsageSummary, String> {
+        let path = build_usage_path("/internal/v1/usage/summary", &query)?;
+        self.get_control_json(&path)
+    }
+
+    pub fn usage_time_series(&self, query: UsageQuery) -> Result<UsageTimeSeries, String> {
+        let path = build_usage_path("/internal/v1/usage/timeseries", &query)?;
+        self.get_control_json(&path)
+    }
+
+    fn get_control_json<T: for<'a> Deserialize<'a>>(&self, path: &str) -> Result<T, String> {
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::get_json(&ready.control_url, token.as_str(), path)
+    }
     pub fn list_models(&self, query: ModelListQuery) -> Result<ModelPage, String> {
         let path = build_model_list_path(&query)?;
         let inner = self.lock()?;

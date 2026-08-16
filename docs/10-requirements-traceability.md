@@ -138,3 +138,6 @@
 2026-08-16 已记录：Phase 4 Task 4.5 新增 `tests/live/codex-smoke.ps1` 和使用说明，覆盖隔离 `CODEX_HOME`、仅回环 `/v1`、显式 `-RunLive` Tool/Function smoke 与 Local Access Key 输出扫描；本次仅完成脚本语法、预检和项目门禁（L1），尚未执行真实 Provider/Codex，取消端到端断言待可观测性阶段。
 
 2026-08-16 已记录：Phase 5 Task 5.1 落地 `RequestRecord`、事务仓储、单终态生命周期、流式终态包装器和三个协议入口接入；验证为 Core 定向测试、`go vet ./...`（L1），不保存正文/Header/Tool 参数；Windows `-race` 受本机 Go race runtime 链接错误阻塞，队列、费用和 UI 查询仍待后续任务。
+
+
+| FR-OBS-001~005 / NFR-UX-001/002/004 | Task 5.4 请求与用量查询 | `observability/query.go`、`storage` 查询仓储、Control Plane 请求/用量接口、Tauri 桥接、`features/observability`、概览/请求/用量页面 | 后端游标与聚合单测、Control Plane 负向测试、桌面页面四态与抽屉测试 | 不包含费用统计或真实 Provider/客户端联调 |

@@ -10,8 +10,9 @@ use tauri_plugin_opener::OpenerExt;
 use crate::core_process::{
     CoreProcessManager, CreateManualModelInput, CreateProviderInput, DashboardSnapshot,
     DiagnosticsExport, DiagnosticsSummary, ModelListQuery, ModelPage, ModelSummary,
-    OneTimeLocalKey, ProviderSummary, ProviderTestResult, RuntimeSnapshot, SyncModelsResult,
-    UpdateModelLimitsInput, UpdateProviderInput,
+    OneTimeLocalKey, ProviderSummary, ProviderTestResult, RequestListQuery, RequestMetadata,
+    RequestPage, RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput, UpdateProviderInput,
+    UsageQuery, UsageSummary, UsageTimeSeries,
 };
 use crate::data_plane_client::{self, LocalResponsesTestResult};
 
@@ -32,6 +33,46 @@ pub async fn dashboard_status(
         .map_err(|_| "读取 Core 概览失败".to_owned())?
 }
 
+#[tauri::command]
+pub async fn list_requests(
+    query: RequestListQuery,
+    state: State<'_, CoreProcessManager>,
+) -> Result<RequestPage, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.list_requests(query))
+        .await
+        .map_err(|_| "读取请求记录失败".to_owned())?
+}
+#[tauri::command]
+pub async fn get_request(
+    id: String,
+    state: State<'_, CoreProcessManager>,
+) -> Result<RequestMetadata, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.get_request(id))
+        .await
+        .map_err(|_| "读取请求详情失败".to_owned())?
+}
+#[tauri::command]
+pub async fn usage_summary(
+    query: UsageQuery,
+    state: State<'_, CoreProcessManager>,
+) -> Result<UsageSummary, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.usage_summary(query))
+        .await
+        .map_err(|_| "读取用量汇总失败".to_owned())?
+}
+#[tauri::command]
+pub async fn usage_time_series(
+    query: UsageQuery,
+    state: State<'_, CoreProcessManager>,
+) -> Result<UsageTimeSeries, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.usage_time_series(query))
+        .await
+        .map_err(|_| "读取用量趋势失败".to_owned())?
+}
 #[tauri::command]
 pub fn open_diagnostics_directory(app: AppHandle) -> Result<(), String> {
     let local_data_dir = app

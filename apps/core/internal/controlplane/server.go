@@ -34,6 +34,8 @@ type Server struct {
 	modelService       ModelService
 	modelReader        ModelReader
 	diagnostics        DiagnosticsService
+	requestReader      RequestReader
+	usageReader        UsageReader
 	shutdownOnce       sync.Once
 	shutdownError      error
 }
@@ -49,13 +51,15 @@ type Options struct {
 	ModelService       ModelService
 	ModelReader        ModelReader
 	Diagnostics        DiagnosticsService
+	RequestReader      RequestReader
+	UsageReader        UsageReader
 }
 
 func NewServer(options Options) (*Server, error) {
 	if len(options.ManagementToken) < 32 || options.Runtime == nil || options.Shutdown == nil {
 		return nil, errors.New("Control Plane 依赖无效")
 	}
-	return &Server{managementToken: []byte(options.ManagementToken), runtime: options.Runtime, shutdown: options.Shutdown, providerService: options.ProviderService, providerReader: options.ProviderReader, localKeyService: options.LocalKeyService, providerOperations: options.ProviderOperations, modelService: options.ModelService, modelReader: options.ModelReader, diagnostics: options.Diagnostics}, nil
+	return &Server{managementToken: []byte(options.ManagementToken), runtime: options.Runtime, shutdown: options.Shutdown, providerService: options.ProviderService, providerReader: options.ProviderReader, localKeyService: options.LocalKeyService, providerOperations: options.ProviderOperations, modelService: options.ModelService, modelReader: options.ModelReader, diagnostics: options.Diagnostics, requestReader: options.RequestReader, usageReader: options.UsageReader}, nil
 }
 
 func (server *Server) Handler() http.Handler {
@@ -73,6 +77,9 @@ func (server *Server) Handler() http.Handler {
 	}
 	if server.modelService != nil && server.modelReader != nil {
 		server.registerModelRoutes(mux)
+	}
+	if server.requestReader != nil && server.usageReader != nil {
+		server.registerObservabilityRoutes(mux)
 	}
 	if server.diagnostics != nil {
 		server.registerDiagnosticsRoutes(mux)

@@ -161,23 +161,23 @@ powershell -NoProfile -File tests/e2e/diagnostics-secret-scan.ps1
 
 **Interfaces:** Produces cursor-paginated request list, request metadata detail and time-series/summary endpoints。
 
-- [ ] **Step 1: 写 Control API 失败测试**
+- [x] **Step 1: 写 Control API 失败测试**
 
 覆盖 `page_size` 上限、稳定 Cursor、Sort allowlist、时区、未知 Token/缓存命中率单列、无 Body/Header/Tool 参数和无 N+1 Query。
 
-- [ ] **Step 2: 实现分页查询与 OpenAPI**
+- [x] **Step 2: 实现分页查询与 OpenAPI**
 
 只使用索引列过滤；Cursor 包含稳定排序键；契约生成类型后执行漂移检查。
 
-- [ ] **Step 3: 写 UI 四态和可访问性测试**
+- [x] **Step 3: 写 UI 四态和可访问性测试**
 
 覆盖筛选、分页、未知 Token/缓存命中率 `—`、无正文 Detail、图表表格替代、键盘焦点和错误重试。
 
-- [ ] **Step 4: 实现页面**
+- [x] **Step 4: 实现页面**
 
-React Query 管理 Server State；Filter URL/State 不含 Secret；图表和表格使用同一已验证数据模型。
+沿用既有 feature hook 管理 Server State；Filter URL/State 不含 Secret；图表和表格使用同一已验证数据模型。用户明确要求不做费用统计，页面和契约不包含成本字段。
 
-- [ ] **Step 5: 验证**
+- [x] **Step 5: 验证**
 
 ```powershell
 pnpm contracts:check
@@ -266,7 +266,7 @@ Port 1024~65535、Timeout 和 Retention 有上下限；V1 Host 不可编辑；Po
 
 Restore、Clear、Rotate 和 Delete 使用二次确认，禁用重复提交，并在失败时提供恢复建议。
 
-- [ ] **Step 5: 验证**
+- [x] **Step 5: 验证**
 
 ```powershell
 pnpm contracts:check

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"aggregationhub.local/core/internal/normalize"
@@ -158,3 +159,151 @@ func boolToInteger(value bool) int {
 }
 
 var _ observability.RequestStore = (*RequestRepository)(nil)
+
+// List 返回固定 created_at DESC、id DESC 顺序的脱敏请求元数据。
+func (repository *RequestRepository) List(ctx context.Context, query observability.RequestListQuery) (observability.RequestPage, error) {
+	if ctx == nil || observability.ValidateRequestListQuery(query) != nil {
+		return observability.RequestPage{}, observability.ErrInvalidRequestQuery
+	}
+	where, arguments, err := requestQueryWhere(query)
+	if err != nil {
+		return observability.RequestPage{}, err
+	}
+	arguments = append(arguments, query.PageSize+1)
+	statement := `SELECT id,created_at,completed_at,source_protocol,provider_slug_snapshot,public_model_snapshot,streaming,status,http_status,error_code,retryable,input_tokens,output_tokens,cached_input_tokens,cache_write_tokens,reasoning_tokens,duration_ms FROM requests` + where + ` ORDER BY created_at DESC,id DESC LIMIT ?`
+	rows, err := repository.database.QueryContext(ctx, statement, arguments...)
+	if err != nil {
+		return observability.RequestPage{}, fmt.Errorf("读取请求记录失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]observability.RequestMetadata, 0, query.PageSize)
+	for rows.Next() {
+		item, err := scanRequestMetadata(rows)
+		if err != nil {
+			return observability.RequestPage{}, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return observability.RequestPage{}, fmt.Errorf("遍历请求记录失败: %w", err)
+	}
+	page := observability.RequestPage{Data: items}
+	if len(items) > query.PageSize {
+		last := items[query.PageSize-1]
+		cursor := observability.EncodeRequestCursor(last.CreatedAt, last.ID)
+		page.Data = items[:query.PageSize]
+		page.NextCursor = &cursor
+	}
+	return page, nil
+}
+
+// Get 返回单条脱敏请求元数据，不存在时不泄漏数据库错误。
+func (repository *RequestRepository) Get(ctx context.Context, id string) (observability.RequestMetadata, error) {
+	if ctx == nil || id == "" || len(id) > 64 {
+		return observability.RequestMetadata{}, observability.ErrRequestNotFound
+	}
+	row := repository.database.QueryRowContext(ctx, `SELECT id,created_at,completed_at,source_protocol,provider_slug_snapshot,public_model_snapshot,streaming,status,http_status,error_code,retryable,input_tokens,output_tokens,cached_input_tokens,cache_write_tokens,reasoning_tokens,duration_ms FROM requests WHERE id=?`, id)
+	item, err := scanRequestMetadata(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return observability.RequestMetadata{}, observability.ErrRequestNotFound
+	}
+	return item, err
+}
+
+type requestMetadataScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanRequestMetadata(scanner requestMetadataScanner) (observability.RequestMetadata, error) {
+	var item observability.RequestMetadata
+	var createdAt int64
+	var completedAt sql.NullInt64
+	var streaming, retryable int
+	var status string
+	var source string
+	var httpStatus sql.NullInt64
+	var errorCode sql.NullString
+	var inputTokens, outputTokens, cachedInputTokens, cacheWriteTokens, reasoningTokens, durationMS sql.NullInt64
+	if err := scanner.Scan(&item.ID, &createdAt, &completedAt, &source, &item.ProviderSlug, &item.PublicModelID, &streaming, &status, &httpStatus, &errorCode, &retryable, &inputTokens, &outputTokens, &cachedInputTokens, &cacheWriteTokens, &reasoningTokens, &durationMS); err != nil {
+		return observability.RequestMetadata{}, err
+	}
+	item.CreatedAt = time.UnixMilli(createdAt).UTC()
+	item.SourceProtocol = observability.SourceProtocol(source)
+	item.Status = observability.RequestStatus(status)
+	item.Streaming = streaming != 0
+	item.Retryable = retryable != 0
+	item.CompletedAt = nullableRequestTime(completedAt)
+	item.HTTPStatus = nullableRequestInt(httpStatus)
+	item.ErrorCode = nullableRequestStringPointer(errorCode)
+	item.InputTokens = nullableRequestMetadataInt64(inputTokens)
+	item.OutputTokens = nullableRequestMetadataInt64(outputTokens)
+	item.CachedInputTokens = nullableRequestMetadataInt64(cachedInputTokens)
+	item.CacheWriteTokens = nullableRequestMetadataInt64(cacheWriteTokens)
+	item.ReasoningTokens = nullableRequestMetadataInt64(reasoningTokens)
+	item.DurationMS = nullableRequestMetadataInt64(durationMS)
+	return item, nil
+}
+
+func requestQueryWhere(query observability.RequestListQuery) (string, []any, error) {
+	conditions := make([]string, 0, 8)
+	arguments := make([]any, 0, 10)
+	if query.Status != "" {
+		conditions, arguments = append(conditions, "status=?"), append(arguments, query.Status)
+	}
+	if query.ProviderSlug != "" {
+		conditions, arguments = append(conditions, "provider_slug_snapshot=?"), append(arguments, query.ProviderSlug)
+	}
+	if query.PublicModelID != "" {
+		conditions, arguments = append(conditions, "public_model_snapshot=?"), append(arguments, query.PublicModelID)
+	}
+	if query.SourceProtocol != "" {
+		conditions, arguments = append(conditions, "source_protocol=?"), append(arguments, query.SourceProtocol)
+	}
+	if query.FromUTC != nil {
+		conditions, arguments = append(conditions, "created_at>=?"), append(arguments, query.FromUTC.UTC().UnixMilli())
+	}
+	if query.ToUTC != nil {
+		conditions, arguments = append(conditions, "created_at<=?"), append(arguments, query.ToUTC.UTC().UnixMilli())
+	}
+	if query.Cursor != "" {
+		createdAt, id, err := observability.DecodeRequestCursor(query.Cursor)
+		if err != nil {
+			return "", nil, observability.ErrInvalidRequestQuery
+		}
+		conditions, arguments = append(conditions, "(created_at<? OR (created_at=? AND id<?))"), append(arguments, createdAt.UnixMilli(), createdAt.UnixMilli(), id)
+	}
+	if len(conditions) == 0 {
+		return "", arguments, nil
+	}
+	return " WHERE " + strings.Join(conditions, " AND "), arguments, nil
+}
+
+func nullableRequestTime(value sql.NullInt64) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	result := time.UnixMilli(value.Int64).UTC()
+	return &result
+}
+func nullableRequestInt(value sql.NullInt64) *int {
+	if !value.Valid {
+		return nil
+	}
+	result := int(value.Int64)
+	return &result
+}
+func nullableRequestStringPointer(value sql.NullString) *string {
+	if !value.Valid {
+		return nil
+	}
+	result := value.String
+	return &result
+}
+func nullableRequestMetadataInt64(value sql.NullInt64) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	result := value.Int64
+	return &result
+}

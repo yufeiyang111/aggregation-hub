@@ -84,3 +84,9 @@ PR：Go fmt/vet/lint/test、Rust fmt/clippy/test、TypeScript typecheck/lint/tes
 ## 11. Bug 回归
 
 先复现并添加失败测试，再修根因；运行最小测试和受影响 broader checks；最终报告明确静态、Fake 和真实运行证据。
+
+## Task 5.4 覆盖补充（2026-08-16）
+
+- 请求与用量查询：分页稳定性、参数上限、UTC 时间窗、未知 Token/缓存命中率、无 N+1 读取和安全 DTO。
+- 桌面页面：概览、请求记录、用量的 loading、empty、error、success；请求详情 Escape 关闭且明确提示未保存正文。
+- 不测试或声称价格、费用、真实 Provider、真实 Claude Code/Codex 或 OAuth 结果；这些均不在本任务证据范围内。

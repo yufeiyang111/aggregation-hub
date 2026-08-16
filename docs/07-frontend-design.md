@@ -102,13 +102,13 @@ Claude Code 页：Base URL、Local Key 环境变量占位符、模型 ID、Messa
 
 ## 9. 请求记录
 
-列表：时间、请求 ID、协议、Provider、模型、状态、首 Token、总耗时、Token 和费用；支持时间、Provider、模型、协议、状态、错误筛选。
+列表：时间、请求 ID、协议、Provider、模型、状态、总耗时和 Token；支持时间、Provider、模型、协议和状态筛选。V1 固定按创建时间倒序并使用 Cursor 翻页，不展示费用。
 
 详情只显示路由、时延、Token、错误摘要和取消状态，明确提示默认不保存 Prompt、回复和 Tool 参数。
 
 ## 10. 用量、OAuth、诊断、设置
 
-用量支持日/周/月、Provider、模型、Token 分类、请求量、成功率和费用；未知费用与已定价数据分开。图表必须有表格替代。
+用量支持按 UTC 日聚合、Provider、模型、Token 分类、请求量、成功率和缓存命中率；Token 与缓存命中率未知时显示 `—`。V1 不计算或展示费用；趋势表格是图表的可访问替代。
 
 OAuth 卡片显示 Provider、账户标签、状态、过期、最近刷新、重新授权和撤销。授权打开系统浏览器，应用显示等待与超时；不在 WebView 中接收 Token。
 

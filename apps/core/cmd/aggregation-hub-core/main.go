@@ -100,6 +100,11 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("请求观测仓储初始化失败")
 		return 1
 	}
+	usageRepository, err := storage.NewUsageRepository(database)
+	if err != nil {
+		logger.Print("用量观测仓储初始化失败")
+		return 1
+	}
 	baseRequestRecorder, err := observability.NewRecorder(requestRepository, observability.RecorderOptions{})
 	if err != nil {
 		logger.Print("请求观测初始化失败")
@@ -186,6 +191,8 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		ManagementToken:    secrets.ManagementToken,
 		Runtime:            runtimeSource,
 		Diagnostics:        diagnosticsExporter,
+		RequestReader:      requestRepository,
+		UsageReader:        usageRepository,
 		ProviderService:    providerService,
 		ProviderReader:     providerRepository,
 		ProviderOperations: providerOperations,

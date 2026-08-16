@@ -169,6 +169,50 @@ export interface ModelPage {
   next_cursor: string | null;
 }
 
+export type RequestStatus = "pending" | "streaming" | "succeeded" | "failed" | "cancelled" | "aborted_by_restart";
+export type SourceProtocol = "anthropic_messages" | "openai_responses" | "openai_chat";
+
+export interface RequestListQuery {
+  cursor?: string;
+  page_size?: number;
+  status?: RequestStatus;
+  provider_slug?: string;
+  public_model_id?: string;
+  source_protocol?: SourceProtocol;
+  from_utc?: string;
+  to_utc?: string;
+}
+
+export interface RequestMetadata {
+  id: string;
+  created_at: string;
+  completed_at: string | null;
+  source_protocol: SourceProtocol;
+  provider_slug: string;
+  public_model_id: string;
+  streaming: boolean;
+  status: RequestStatus;
+  http_status: number | null;
+  error_code: string | null;
+  retryable: boolean;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_input_tokens: number | null;
+  cache_write_tokens: number | null;
+  reasoning_tokens: number | null;
+  duration_ms: number | null;
+}
+
+export interface RequestPage { data: RequestMetadata[]; next_cursor: string | null; }
+export interface UsageQuery { provider_slug?: string; public_model_id?: string; from_utc?: string; to_utc?: string; }
+export interface UsageSummary {
+  request_count: number; succeeded_count: number; failed_count: number; cancelled_count: number;
+  input_tokens: number; output_tokens: number; cached_input_tokens: number; cache_write_tokens: number; reasoning_tokens: number;
+  input_token_reported_count: number; output_token_reported_count: number; cached_input_token_reported_count: number; reasoning_token_reported_count: number;
+  cache_eligible_input_tokens: number; cache_eligible_cached_input_tokens: number; cache_hit_rate_basis_points: number | null;
+}
+export interface UsageTimeSeriesPoint extends UsageSummary { date_utc: string; }
+export interface UsageTimeSeries { data: UsageTimeSeriesPoint[]; }
 export interface OneTimeLocalKey {
   id: string;
   name: string;
@@ -205,6 +249,10 @@ export const desktopApi = {
   testProvider: (id: string) => invoke<ProviderTestResult>("test_provider", { id }),
   syncProviderModels: (id: string) => invoke<SyncModelsResult>("sync_provider_models", { id }),
   listModels: (query: ModelListQuery) => invoke<ModelPage>("list_models", { query }),
+  listRequests: (query: RequestListQuery) => invoke<RequestPage>("list_requests", { query }),
+  getRequest: (id: string) => invoke<RequestMetadata>("get_request", { id }),
+  usageSummary: (query: UsageQuery) => invoke<UsageSummary>("usage_summary", { query }),
+  usageTimeSeries: (query: UsageQuery) => invoke<UsageTimeSeries>("usage_time_series", { query }),
   updateModelCapabilities: (id: string, input: UpdateModelCapabilitiesInput) => invoke<ModelSummary>("update_model_capabilities", { id, input }),
   updateModelLimits: (id: string, input: UpdateModelLimitsInput) => invoke<ModelSummary>("update_model_limits", { id, input }),
   createManualModel: (provider_id: string, input: CreateManualModelInput) => invoke<ModelSummary>("create_manual_model", { provider_id, input }),

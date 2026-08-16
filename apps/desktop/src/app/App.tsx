@@ -1,19 +1,24 @@
 import { type ChangeEvent, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CodexSetupPage } from "../features/connections/CodexSetupPage";
 import { DiagnosticsPage } from "../pages/DiagnosticsPage";
+import { DashboardPage } from "../pages/DashboardPage";
+import { RequestListPage } from "../pages/RequestListPage";
+import { UsagePage } from "../pages/UsagePage";
 import { desktopApi, type CreateManualModelInput, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelLimitOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
 import { EmptyState } from "../components/EmptyState";
 import { StatusDot } from "../components/StatusDot";
 
 type LocalResponsesTestResult = import("../lib/desktop-api").LocalResponsesTestResult;
 
-type PageID = "services" | "models" | "clients" | "logs" | "settings";
+type PageID = "overview" | "services" | "models" | "clients" | "requests" | "usage" | "logs" | "settings";
 type CopyState = "idle" | "copied" | "failed";
 
 const navigationItems: ReadonlyArray<{ id: PageID; label: string }> = [
   { id: "services", label: "服务" },
   { id: "models", label: "模型" },
   { id: "clients", label: "客户端配置" },
+  { id: "requests", label: "请求记录" },
+  { id: "usage", label: "用量" },
   { id: "logs", label: "日志" },
   { id: "settings", label: "设置" },
 ];
@@ -1207,6 +1212,9 @@ export function App() {
   }, [codexModelID, oneTimeKey]);
 
   const renderPage = () => {
+    if (activePage === "overview") return <DashboardPage />;
+    if (activePage === "requests") return <RequestListPage />;
+    if (activePage === "usage") return <UsagePage />;
     if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestEdit={setEditingProvider} onRequestDelete={handleRequestProviderDelete} />;
     if (activePage === "models") {
       return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} onRequestEdit={setEditingModel} onRequestEditLimits={setEditingModelLimits} onRequestDelete={(model) => setPendingModelDelete({ model })} onCreateManual={() => setManualModelCreateOpen(true)} providers={dashboard?.providers ?? []} />;
