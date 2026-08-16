@@ -2,16 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 完成请求状态、Token/费用、健康、诊断、Dashboard、请求/用量页面、设置、保留、备份恢复和可访问性，使日常使用不依赖终端。
+**Goal:** 完成请求状态、Token/缓存命中率、健康、诊断、Dashboard、请求/用量页面、设置、保留、备份恢复和可访问性，使日常使用不依赖终端。
 
-**Architecture:** Observability 只接收脱敏事件并通过有界队列写 SQLite；UI 通过 Control Plane 分页查询；图表与表格共用同一查询模型；备份和维护由 Core 执行，WebView 不接触任意文件路径。
+**Architecture:** Observability 只接收脱敏事件；请求终态在 SQLite 事务内更新 Token 日汇总，UI 通过 Control Plane 分页查询；图表与表格共用同一查询模型；备份和维护由 Core 执行，WebView 不接触任意文件路径。
 
 **Tech Stack:** Go 1.26、SQLite、React Query、Recharts、Zod、Vitest、Tauri Commands、PowerShell E2E。
 
 ## Global Constraints
 
 - 不保存 Prompt、回复、Tool 参数、请求 Header 和完整上游错误体。
-- 费用使用整数微美元；未知价格与零费用必须分开。
+- Token 未知与真实的零 Token 必须分开；缓存命中率只使用输入与缓存 Token 均已报告的请求。
 - 请求状态机只能产生一个终态。
 - 诊断导出使用字段和文件 allowlist，不直接打包数据库。
 - UI 包含 loading、empty、error、success 状态，并保持键盘和缩放可用。
@@ -58,43 +58,46 @@ go test ./internal/observability ./internal/storage ./internal/ingress/... -v
 
 ---
 
-### Task 5.2: 有界队列、费用与日汇总
+### Task 5.2: Token、缓存命中率与日汇总
 
-**Requirements:** `FR-OBS-002/005`、`NFR-PERF-003`、`NFR-REL-002/004`。
+**Requirements:** `FR-OBS-002/005`、`NFR-REL-002/004`。
 
 **Files:**
-- Create: `apps/core/internal/observability/queue.go`
-- Create: `apps/core/internal/observability/queue_test.go`
-- Create: `apps/core/internal/observability/pricing.go`
-- Create: `apps/core/internal/observability/pricing_test.go`
+- Create: `apps/core/internal/observability/usage.go`
+- Create: `apps/core/internal/observability/usage_test.go`
 - Create: `apps/core/internal/storage/usage_repository.go`
 - Create: `apps/core/internal/storage/usage_repository_test.go`
-- Create: `tests/e2e/observability-stress.ps1`
+- Create: `apps/core/migrations/0003_usage_token_reporting.sql`
+- Modify: `apps/core/internal/storage/request_repository.go`
+- Modify: `apps/core/internal/storage/migrate_test.go`
 
-**Interfaces:** Produces non-blocking bounded recorder、integer cost and idempotent daily upsert。
+**Interfaces:** Produces idempotent UTC daily Token upsert and integer cache-hit-rate basis points; no pricing or cost calculation。
 
-- [ ] **Step 1: 写队列饱和失败测试**
+- [x] **Step 1: 写 Token 与缓存命中率失败测试**
 
-低价值调试事件可丢弃，但 terminal/error 必须同步保留并递增 dropped counter；Shutdown 必须按超时 Drain。
+覆盖输入/输出/缓存/Reasoning Token、缓存命中率的正常/零/未知/上游不一致/最大整数边界；不使用浮点累计。
 
-- [ ] **Step 2: 写整数费用测试**
+- [x] **Step 2: 实现 Token 已报告语义与前向迁移**
 
-覆盖输入/输出/缓存/Reasoning Token、价格历史生效时间、溢出、未知价格和零价格；禁止浮点累计。
+新增 Token 已报告计数和可比较缓存分子/分母列。缺失上游 Token 不累计已报告计数，UI 后续必须显示未知而不是 0；既有费用字段和价格表不删除，但 V1 不写入或展示。
 
-- [ ] **Step 3: 实现事务日汇总**
+- [x] **Step 3: 实现事务日汇总**
 
-终态事务内 UPSERT `usage_daily`；重复消费同一 Request ID 不重复累计。
+请求终态更新成功后，在同一事务内 UPSERT `usage_daily`；同一 Request ID 的第二个终态会被状态机拒绝，因此不会重复累计。
 
-- [ ] **Step 4: 执行并发压力验证**
+- [x] **Step 4: 执行并发与总门禁验证**
 
 ```powershell
 cd apps/core
-go test ./internal/observability ./internal/storage -v -race
+go test ./internal/observability ./internal/storage -v
+go vet ./...
+go test ./...
 cd ../..
-powershell -NoProfile -File tests/e2e/observability-stress.ps1 -ConcurrentStreams 100
+pnpm check
+pnpm core:test:race
 ```
 
-Expected: 单元和 Race PASS；压力脚本无丢失终态、重复计费或无界队列。Suggested commit when authorized: `feat(observability): add bounded usage and pricing pipeline`。
+2026-08-16 已通过定向单元/迁移/并发汇总、Core `go vet`/`go test`、仓库 `pnpm check` 与 `pnpm core:test:race`。Suggested commit when authorized: `feat(observability): add token usage daily summaries`。
 
 ---
 
@@ -160,7 +163,7 @@ Expected: ZIP 无路径穿越、绝对路径和 Sentinel；UI 只打开受控目
 
 - [ ] **Step 1: 写 Control API 失败测试**
 
-覆盖 `page_size` 上限、稳定 Cursor、Sort allowlist、时区、未知价格单列、无 Body/Header/Tool 参数和无 N+1 Query。
+覆盖 `page_size` 上限、稳定 Cursor、Sort allowlist、时区、未知 Token/缓存命中率单列、无 Body/Header/Tool 参数和无 N+1 Query。
 
 - [ ] **Step 2: 实现分页查询与 OpenAPI**
 
@@ -168,7 +171,7 @@ Expected: ZIP 无路径穿越、绝对路径和 Sentinel；UI 只打开受控目
 
 - [ ] **Step 3: 写 UI 四态和可访问性测试**
 
-覆盖筛选、分页、未知费用 `—`、无正文 Detail、图表表格替代、键盘焦点和错误重试。
+覆盖筛选、分页、未知 Token/缓存命中率 `—`、无正文 Detail、图表表格替代、键盘焦点和错误重试。
 
 - [ ] **Step 4: 实现页面**
 
@@ -315,7 +318,7 @@ Expected: PASS，并更新证据矩阵。Suggested commit when authorized: `test
 ## Phase 5 Gate
 
 - [ ] 日常管理不依赖终端。
-- [ ] 请求、费用和健康数据正确且不含正文。
+- [ ] 请求、Token/缓存命中率和健康数据正确且不含正文。
 - [ ] 诊断包和日志 Sentinel 扫描通过。
 - [ ] 备份恢复和保留任务可恢复、可取消。
 - [ ] UI 四态、键盘、焦点、缩放和 Reduced Motion 通过。

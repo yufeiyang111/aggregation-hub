@@ -119,7 +119,8 @@ func TestMigrateRollsBackFailedMigrationWithoutResettingDatabase(t *testing.T) {
 	brokenMigrations := fstest.MapFS{
 		"0001_initial.sql":               &fstest.MapFile{Data: mustReadMigration(t, "0001_initial.sql")},
 		"0002_model_limit_overrides.sql": &fstest.MapFile{Data: mustReadMigration(t, "0002_model_limit_overrides.sql")},
-		"0003_broken.sql":                &fstest.MapFile{Data: []byte("CREATE TABLE broken (id INTEGER;\n")},
+		"0003_usage_token_reporting.sql": &fstest.MapFile{Data: mustReadMigration(t, "0003_usage_token_reporting.sql")},
+		"0004_broken.sql":                &fstest.MapFile{Data: []byte("CREATE TABLE broken (id INTEGER;\n")},
 	}
 
 	err := storage.Migrate(context.Background(), database, brokenMigrations)
@@ -131,7 +132,7 @@ func TestMigrateRollsBackFailedMigrationWithoutResettingDatabase(t *testing.T) {
 	if err := database.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("查询迁移记录失败: %v", err)
 	}
-	if migrationCount != 2 {
+	if migrationCount != 3 {
 		t.Fatalf("失败迁移不得写入记录，实际记录数=%d", migrationCount)
 	}
 

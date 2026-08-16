@@ -30,7 +30,7 @@ Anthropic Adapter、`/v1/messages`、System、Tool、Thinking、Anthropic SSE、
 
 ## Phase 5：可观测性与产品完整度
 
-请求元数据、Token/价格、Dashboard、请求/用量页面、健康、保留、诊断、备份恢复、设置和可访问性。退出条件：日常使用不依赖终端日志，诊断无秘密。
+请求元数据、Token/缓存命中率、Dashboard、请求/用量页面、健康、保留、诊断、备份恢复、设置和可访问性。退出条件：日常使用不依赖终端日志，诊断无秘密。
 
 ## Phase 6：OAuth
 

@@ -29,7 +29,7 @@
 | FR-API-007~010 | Stream/Cancellation | NormalizedEvent、requests | SSE、Tool、取消、不重放 |
 | FR-KEY-001~005 | Local Key Service | local_access_keys | 生成、哈希、轮换、撤销 |
 | FR-OBS-001~004 | Observability | requests、日志 | 元数据、筛选、秘密扫描 |
-| FR-OBS-005 | Pricing | model_prices、usage_daily | 整数费用、未知价格 |
+| FR-OBS-005 | Token 汇总 | requests、usage_daily | 输入/输出/缓存/Reasoning Token、已报告计数、缓存命中率未知语义 |
 | FR-OBS-006 | Diagnostics | export | allowlist 和敏感扫描 |
 | FR-CONN-001~004 | Client Setup | 模板生成器 | 快照、官方字段、真实连接 |
 

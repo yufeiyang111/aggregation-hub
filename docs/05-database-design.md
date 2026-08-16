@@ -93,7 +93,7 @@ erDiagram
 
 字段：id、provider_model_id、currency、输入/输出/缓存/Reasoning 每百万 Token 微美元价格、source、effective_from、effective_to、created_at。
 
-价格变化新增历史记录，不覆盖旧记录；未知价格保持 NULL。
+价格历史表为既有 schema 保留项；V1 不计算或展示费用，也不依赖价格记录。
 
 ### oauth_accounts
 
@@ -114,7 +114,7 @@ Access Token、Refresh Token、PKCE verifier、client secret 不进入 SQLite。
 - Provider/模型快照；
 - source_protocol、endpoint、streaming、status、http_status、error_code、retryable；
 - usage_source 和 Token 分类；
-- estimated_cost_microusd；
+- `estimated_cost_microusd` 为既有兼容字段，V1 不写入或展示；
 - request_bytes、response_bytes、duration_ms、first_token_ms；
 - created_at、started_stream_at、completed_at。
 
@@ -124,7 +124,7 @@ Access Token、Refresh Token、PKCE verifier、client secret 不进入 SQLite。
 
 ### usage_daily
 
-主键由 UTC 日期、Provider 快照、Public Model 快照组成。保存请求/成功/失败/取消数、Token 分类和费用。请求明细清理前先幂等汇总。
+主键由 UTC 日期、Provider 快照、Public Model 快照组成。保存请求/成功/失败/取消数、Token 分类、各 Token 已报告计数，以及仅对可比较请求累计的缓存命中率分子/分母。请求明细清理前先幂等汇总。
 
 ### audit_events
 
@@ -138,7 +138,7 @@ Access Token、Refresh Token、PKCE verifier、client secret 不进入 SQLite。
 
 请求：接收时插入 pending；流式开始更新 streaming；终态事务更新请求并 UPSERT 日汇总。启动时把遗留 pending/streaming 更新为 aborted_by_restart。
 
-Task 5.1 已实现 `requests` 的 pending/streaming/单终态事务写入和脱敏元数据仓储；`usage_daily` 的幂等日汇总与费用计算仍属于 Task 5.2。
+Task 5.1 已实现 `requests` 的 pending/streaming/单终态事务写入和脱敏元数据仓储；Task 5.2 负责 `usage_daily` 的幂等 Token 日汇总与缓存命中率统计，不实现费用计算。
 
 ### 4.1 Provider 生命周期与凭据补偿
 

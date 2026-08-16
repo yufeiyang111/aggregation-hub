@@ -113,7 +113,7 @@ Provider/模型可路由状态、软删除后的 slug 策略、凭据替换/删�
 
 请求状态：`pending`、`streaming`、`succeeded`、`failed`、`cancelled`、`aborted_by_restart`。启动时把遗留 `pending/streaming` 更新为 `aborted_by_restart`。
 
-记录 Provider、模型、协议、状态、时延、首 Token、Token 分类和估算费用；不保存 Prompt、回复、Tool 参数、Header 和完整上游错误体。
+记录 Provider、模型、协议、状态、时延、首 Token、输入/输出/缓存/Reasoning Token 与缓存命中率所需分母；不保存 Prompt、回复、Tool 参数、Header 和完整上游错误体。
 
 默认保留：请求明细 30 天、健康明细 7 天、文本日志 14 天、日汇总长期保留。清理前先汇总，按批次删除。
 

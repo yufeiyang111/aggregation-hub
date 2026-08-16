@@ -225,7 +225,7 @@ pnpm build:desktop
 | `FR-MODEL-001~007` | Phase 1、2、5 | 唯一约束、确定性路由、能力拒绝矩阵和模型目录 UI |
 | `FR-API-001~010` | Phase 0、2、3、4 | 三种协议契约、SSE、Tool、取消、Claude Code/Codex L4 |
 | `FR-KEY-001~005` | Phase 1、5、7 | 单次展示、哈希、轮换重叠、吊销和秘密扫描 |
-| `FR-OBS-001~006` | Phase 5、7 | 状态机、整数费用、分页筛选、诊断包和敏感数据扫描 |
+| `FR-OBS-001~006` | Phase 5、7 | 状态机、Token/缓存命中率汇总、分页筛选、诊断包和敏感数据扫描 |
 | `FR-CONN-001~004` | Phase 3、4、5 | 配置生成快照、本地健康与完整上游测试、真实客户端验证 |
 | `NFR-SEC-*` | Phase 0、1、5、6、7 | 回环绑定、Control Plane 隔离、SSRF/TLS、脱敏和安全终审 |
 | `NFR-REL-*` | Phase 1、5、7 | 取消时延、事务、迁移故障注入、单终态与重启恢复 |
