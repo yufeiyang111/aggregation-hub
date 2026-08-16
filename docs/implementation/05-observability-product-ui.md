@@ -205,11 +205,11 @@ pnpm web:test
 - Modify: `apps/desktop/src/pages/ModelDetailPage.tsx`
 - Create: related UI tests。
 
-**Interfaces:** Produces connectivity/auth/minimal/stream/tool test kinds and health status transitions。
+**Interfaces:** 基于当前 Adapter 已实现的 `connection`、`models`、`chat` 测试种类产生安全结果与健康状态转换；尚未实现的流式/工具测试必须显式返回 `unsupported_feature`，不伪造成功。原生协议 Adapter 仍按用户决定留到全部 V1 功能完成后再评估。
 
 - [ ] **Step 1: 写错误分类失败测试**
 
-Fake Upstream 覆盖 DNS、TLS、Timeout、Auth、Rate Limit、Protocol、Cancel 和能力不支持。
+Fake Upstream 覆盖 DNS、TLS、Timeout、Auth、Rate Limit、Protocol、Cancel 和能力不支持；当前仅验证 Adapter 已实现的 connection/models/chat 测试种类。
 
 - [ ] **Step 2: 实现显式可取消测试**
 
@@ -323,3 +323,4 @@ Expected: PASS，并更新证据矩阵。Suggested commit when authorized: `test
 - [ ] 备份恢复和保留任务可恢复、可取消。
 - [ ] UI 四态、键盘、焦点、缩放和 Reduced Motion 通过。
 - [ ] `pnpm check` 与 Phase 5 E2E 全部通过。
+
