@@ -29,6 +29,7 @@ import (
 	responsesingress "aggregationhub.local/core/internal/ingress/openai_responses"
 	"aggregationhub.local/core/internal/management"
 	"aggregationhub.local/core/internal/observability"
+	"aggregationhub.local/core/internal/observability/diagnostics"
 	"aggregationhub.local/core/internal/provider"
 	"aggregationhub.local/core/internal/routing"
 	"aggregationhub.local/core/internal/security"
@@ -99,9 +100,15 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("请求观测仓储初始化失败")
 		return 1
 	}
-	requestRecorder, err := observability.NewRecorder(requestRepository, observability.RecorderOptions{})
+	baseRequestRecorder, err := observability.NewRecorder(requestRepository, observability.RecorderOptions{})
 	if err != nil {
 		logger.Print("请求观测初始化失败")
+		return 1
+	}
+	safeLogger := observability.NewSafeLogger(observability.DefaultSafeLoggerCapacity)
+	requestRecorder, err := observability.NewSafeLoggingRecorder(baseRequestRecorder, safeLogger)
+	if err != nil {
+		logger.Print("请求安全日志初始化失败")
 		return 1
 	}
 	router, err := routing.New(providerRepository, modelRepository)
@@ -158,6 +165,14 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 	startedAt := time.Now().UTC()
 	controlPort := controlListener.Addr().(*net.TCPAddr).Port
 	ready := bootstrap.ReadyEvent{Event: "ready", ControlURL: fmt.Sprintf("http://%s:%d", config.LoopbackHost, controlPort), DataPlaneURL: fmt.Sprintf("http://%s:%d", config.LoopbackHost, dataListener.Addr().(*net.TCPAddr).Port), PID: os.Getpid()}
+	runtimeSource := func() controlplane.RuntimeStatus {
+		return controlplane.RuntimeStatus{State: "running", DataPlaneURL: ready.DataPlaneURL, StartedAt: startedAt.Format(time.RFC3339Nano), Version: cfg.Version, LastError: nil}
+	}
+	diagnosticsExporter, err := newDiagnosticsExporter(secrets.DataDir, database, credentialStore, providerRepository, runtimeSource, safeLogger)
+	if err != nil {
+		logger.Print("诊断导出初始化失败")
+		return 1
+	}
 	protectedDataPlane := http.NewServeMux()
 	protectedDataPlane.Handle("POST /v1/chat/completions", chatHandler)
 	protectedDataPlane.Handle("POST /v1/messages", messagesHandler)
@@ -168,10 +183,9 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 	var shutdownRequested atomic.Bool
 	var controlServer *http.Server
 	control, err := controlplane.NewServer(controlplane.Options{
-		ManagementToken: secrets.ManagementToken,
-		Runtime: func() controlplane.RuntimeStatus {
-			return controlplane.RuntimeStatus{State: "running", DataPlaneURL: ready.DataPlaneURL, StartedAt: startedAt.Format(time.RFC3339Nano), Version: cfg.Version, LastError: nil}
-		},
+		ManagementToken:    secrets.ManagementToken,
+		Runtime:            runtimeSource,
+		Diagnostics:        diagnosticsExporter,
 		ProviderService:    providerService,
 		ProviderReader:     providerRepository,
 		ProviderOperations: providerOperations,
@@ -236,6 +250,77 @@ func openRuntimeDatabase(dataDir string) (*sql.DB, error) {
 		return nil, err
 	}
 	return database, nil
+}
+
+func newDiagnosticsExporter(
+	dataDir string,
+	database *sql.DB,
+	credentialStore credential.Store,
+	providers *storage.ProviderRepository,
+	runtime func() controlplane.RuntimeStatus,
+	logger *observability.SafeLogger,
+) (*diagnostics.Exporter, error) {
+	return diagnostics.NewExporter(diagnostics.Options{
+		DataDir: dataDir,
+		Runtime: func() diagnostics.RuntimeSnapshot {
+			return diagnosticsRuntimeSnapshot(runtime())
+		},
+		Logger: logger,
+		Migrations: func(ctx context.Context) ([]diagnostics.Migration, error) {
+			return listDiagnosticsMigrations(ctx, database)
+		},
+		CredentialProbe: func(ctx context.Context) diagnostics.CredentialStore {
+			return diagnosticsCredentialStore(credentialStore.Probe(ctx))
+		},
+		ProviderHealth: func(ctx context.Context) ([]diagnostics.ProviderHealth, error) {
+			return listDiagnosticsProviderHealth(ctx, providers)
+		},
+	})
+}
+
+func diagnosticsRuntimeSnapshot(value controlplane.RuntimeStatus) diagnostics.RuntimeSnapshot {
+	return diagnostics.RuntimeSnapshot{
+		State:        value.State,
+		DataPlaneURL: value.DataPlaneURL,
+		StartedAt:    value.StartedAt,
+		Version:      value.Version,
+	}
+}
+
+func diagnosticsCredentialStore(value credential.Status) diagnostics.CredentialStore {
+	return diagnostics.CredentialStore{
+		Available: value.Available,
+		Backend:   value.Backend,
+	}
+}
+
+func listDiagnosticsMigrations(ctx context.Context, database *sql.DB) ([]diagnostics.Migration, error) {
+	rows, err := database.QueryContext(ctx, "SELECT version,name FROM schema_migrations ORDER BY version ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]diagnostics.Migration, 0)
+	for rows.Next() {
+		var item diagnostics.Migration
+		if err := rows.Scan(&item.Version, &item.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func listDiagnosticsProviderHealth(ctx context.Context, providers *storage.ProviderRepository) ([]diagnostics.ProviderHealth, error) {
+	page, err := providers.List(ctx, provider.ProviderPageQuery{PageSize: 100})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]diagnostics.ProviderHealth, 0, len(page.Items))
+	for _, item := range page.Items {
+		result = append(result, diagnostics.ProviderHealth{Slug: item.Slug, Status: string(item.LifecycleStatus), Enabled: item.Enabled})
+	}
+	return result, nil
 }
 
 func serve(name string, server *http.Server, listener net.Listener, failures chan<- string) {

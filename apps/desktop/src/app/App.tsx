@@ -1,6 +1,9 @@
 import { type ChangeEvent, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CodexSetupPage } from "../features/connections/CodexSetupPage";
+import { DiagnosticsPage } from "../pages/DiagnosticsPage";
 import { desktopApi, type CreateManualModelInput, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelLimitOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
+import { EmptyState } from "../components/EmptyState";
+import { StatusDot } from "../components/StatusDot";
 
 type LocalResponsesTestResult = import("../lib/desktop-api").LocalResponsesTestResult;
 
@@ -83,14 +86,6 @@ function initialOf(value: string) {
   return value.trim().slice(0, 1).toUpperCase() || "服";
 }
 
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <section className="empty-state" aria-labelledby={`${title}-title`}>
-      <h2 id={`${title}-title`}>{title}</h2>
-      <p>{description}</p>
-    </section>
-  );
-}
 
 function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest, onSyncModels, onRequestChange, onRequestEdit, onRequestDelete }: {
   provider: ProviderSummary;
@@ -1219,7 +1214,7 @@ export function App() {
     if (activePage === "clients") {
       return <ClientConfigPage runtime={runtime} actionPending={actionPending} keyName={keyName} oneTimeKey={oneTimeKey} copyState={copyState} addressCopyState={addressCopyState} onKeyNameChange={setKeyName} onCreateKey={handleCreateKey} onCopyKey={handleCopyKey} onCopyAddress={handleCopyAddress} codexModelID={codexModelID} codexCopyState={codexCopyState} onCodexModelIDChange={setCodexModelID} onCopyCodexConfig={handleCopyCodexConfig} canTest={oneTimeKey !== null && codexModelID.trim() !== ""} testPending={codexTestPending} testResult={codexTestResult} onTest={handleTestCodexResponses} />;
     }
-    if (activePage === "logs") return <EmptyState title="日志尚未接入" description="请求日志和诊断信息需要后端观察能力完成后才能安全显示。" />;
+    if (activePage === "logs") return <DiagnosticsPage />;
     return <SettingsPage runtime={runtime} loading={loading} actionPending={actionPending} onRefresh={handleRefresh} onStartOrRestart={handleStartOrRestart} />;
   };
 
@@ -1242,13 +1237,13 @@ export function App() {
         </nav>
         <div className="status-control" ref={statusMenuRef}>
           <button type="button" className="status-button" onClick={handleStatusMenuToggle} aria-expanded={statusMenuOpen} aria-haspopup="dialog" aria-controls="runtime-menu">
-            <span className={`status-dot status-${runtime?.state ?? "loading"}`} aria-hidden="true" />
+            <StatusDot state={runtime?.state ?? "loading"} />
             <span>{statusLabel}</span>
           </button>
           {statusMenuOpen ? (
             <section id="runtime-menu" className="status-menu" role="dialog" aria-label="网关状态和操作">
               <div className="status-menu-heading">
-                <span className={`status-dot status-${runtime?.state ?? "loading"}`} aria-hidden="true" />
+                <StatusDot state={runtime?.state ?? "loading"} />
                 <strong>{statusDescription}</strong>
               </div>
               <dl>

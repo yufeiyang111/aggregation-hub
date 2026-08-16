@@ -1,10 +1,17 @@
 use serde::Deserialize;
-use tauri::{AppHandle, State};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::core_process::{
     CoreProcessManager, CreateManualModelInput, CreateProviderInput, DashboardSnapshot,
-    ModelListQuery, ModelPage, ModelSummary, OneTimeLocalKey, ProviderSummary, ProviderTestResult,
-    RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput, UpdateProviderInput,
+    DiagnosticsExport, DiagnosticsSummary, ModelListQuery, ModelPage, ModelSummary,
+    OneTimeLocalKey, ProviderSummary, ProviderTestResult, RuntimeSnapshot, SyncModelsResult,
+    UpdateModelLimitsInput, UpdateProviderInput,
 };
 use crate::data_plane_client::{self, LocalResponsesTestResult};
 
@@ -23,6 +30,44 @@ pub async fn dashboard_status(
     tauri::async_runtime::spawn_blocking(move || manager.dashboard())
         .await
         .map_err(|_| "读取 Core 概览失败".to_owned())?
+}
+
+#[tauri::command]
+pub fn open_diagnostics_directory(app: AppHandle) -> Result<(), String> {
+    let local_data_dir = app
+        .path()
+        .local_data_dir()
+        .map_err(|_| "运行数据目录不可用".to_owned())?;
+    let diagnostics_dir = diagnostics_directory_path(&local_data_dir);
+
+    fs::create_dir_all(&diagnostics_dir).map_err(|_| "创建诊断目录失败".to_owned())?;
+    app.opener()
+        .open_path(diagnostics_dir.to_string_lossy(), None::<&str>)
+        .map_err(|_| "打开诊断目录失败".to_owned())
+}
+
+fn diagnostics_directory_path(local_data_dir: &Path) -> PathBuf {
+    local_data_dir.join("AggregationHub").join("diagnostics")
+}
+
+#[tauri::command]
+pub async fn diagnostics_summary(
+    state: State<'_, CoreProcessManager>,
+) -> Result<DiagnosticsSummary, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.diagnostics())
+        .await
+        .map_err(|_| "读取诊断摘要失败")?
+}
+
+#[tauri::command]
+pub async fn diagnostics_export(
+    state: State<'_, CoreProcessManager>,
+) -> Result<DiagnosticsExport, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.export_diagnostics())
+        .await
+        .map_err(|_| "导出诊断包失败")?
 }
 
 #[tauri::command]
@@ -250,4 +295,23 @@ pub async fn runtime_restart(
     state: State<'_, CoreProcessManager>,
 ) -> Result<RuntimeSnapshot, String> {
     state.restart(&app)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::diagnostics_directory_path;
+
+    #[test]
+    fn diagnostics_directory_is_fixed_below_local_data_directory() {
+        let directory = diagnostics_directory_path(Path::new(r"C:\\Users\\tester\\AppData\\Local"));
+
+        assert_eq!(
+            directory,
+            Path::new(r"C:\\Users\\tester\\AppData\\Local")
+                .join("AggregationHub")
+                .join("diagnostics")
+        );
+    }
 }

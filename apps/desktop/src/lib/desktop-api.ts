@@ -51,6 +51,19 @@ export interface DashboardSnapshot {
   providers: ProviderSummary[];
 }
 
+export interface DiagnosticsSummary {
+  format_version: string;
+  recent_error_count: number;
+  export_available: boolean;
+}
+
+export interface DiagnosticsExport {
+  file_name: string;
+  size_bytes: number;
+  generated_at: string;
+  format_version: string;
+}
+
 export interface CreateProviderInput {
   slug: string;
   name: string;
@@ -181,6 +194,9 @@ export interface LocalResponsesTestResult {
 
 export const desktopApi = {
   dashboard: () => invoke<DashboardSnapshot>("dashboard_status"),
+  diagnosticsSummary: () => invoke<DiagnosticsSummary>("diagnostics_summary"),
+  exportDiagnostics: () => invoke<DiagnosticsExport>("diagnostics_export"),
+  openDiagnosticsDirectory: () => invoke<void>("open_diagnostics_directory"),
   createProvider: (input: CreateProviderInput) => invoke<ProviderSummary>("create_provider", { input }),
   updateProvider: (id: string, input: UpdateProviderInput, adapterConfig: AdapterConfig) => invoke<ProviderSummary>("update_provider", { id, input, adapterConfig }),
   deleteProvider: (id: string, version: number) => invoke<void>("delete_provider", { id, version }),

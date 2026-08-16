@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMocks = vi.hoisted(() => ({
   dashboard: vi.fn(),
+  diagnosticsSummary: vi.fn(),
+  exportDiagnostics: vi.fn(),
+  openDiagnosticsDirectory: vi.fn(),
   createProvider: vi.fn(),
   updateProvider: vi.fn(),
   deleteProvider: vi.fn(),
@@ -80,6 +83,9 @@ describe("App", () => {
 
   beforeEach(() => {
     apiMocks.dashboard.mockReset();
+    apiMocks.diagnosticsSummary.mockReset();
+    apiMocks.exportDiagnostics.mockReset();
+    apiMocks.openDiagnosticsDirectory.mockReset();
     apiMocks.createProvider.mockReset();
     apiMocks.updateProvider.mockReset();
     apiMocks.deleteProvider.mockReset();
@@ -96,6 +102,8 @@ describe("App", () => {
     apiMocks.stop.mockReset();
     apiMocks.restart.mockReset();
     apiMocks.dashboard.mockResolvedValue(runningDashboard);
+    apiMocks.diagnosticsSummary.mockResolvedValue({ format_version: "diagnostics/v1", recent_error_count: 0, export_available: true });
+    apiMocks.openDiagnosticsDirectory.mockResolvedValue(undefined);
     apiMocks.createProvider.mockResolvedValue(runningDashboard.providers[0]);
     apiMocks.updateProvider.mockResolvedValue(runningDashboard.providers[0]);
     apiMocks.deleteProvider.mockResolvedValue(undefined);

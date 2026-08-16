@@ -232,10 +232,12 @@ GET /internal/v1/usage/timeseries
 
 ```text
 GET/PATCH /internal/v1/settings
-GET /internal/v1/diagnostics
+GET  /internal/v1/diagnostics
 POST /internal/v1/diagnostics/export
 POST /internal/v1/maintenance/prune
 ```
+
+`GET /internal/v1/diagnostics` 返回固定版本、最近安全错误计数和导出能力；不返回错误原文、请求正文、凭据、数据库内容或诊断目录绝对路径。`POST /internal/v1/diagnostics/export` 只能由管理令牌显式触发，生成固定 allowlist 的 ZIP，并只返回文件名、大小、生成时间和格式版本；不会自动上传，WebView 也不能指定目标路径。
 
 修改监听端口返回 `restart_required: true`，不得静默重启中断请求。
 

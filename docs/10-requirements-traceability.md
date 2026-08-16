@@ -99,6 +99,7 @@
 | FR-PROV-001~004、NFR-REL-002~003 | `apps/core/internal/controlplane/provider_handler.go`、`apps/core/internal/provider/*.go` | Provider CRUD 使用显式 DTO、64 KiB Body 上限、版本冲突、无凭据回显和安全错误映射 | Fake Service/Reader 的 CRUD、超限 Body、秘密回显与错误映射测试（L1） |
 | NFR-REL-004 | `apps/core/internal/observability/recovery.go` | 启动时仅将 `pending` / `streaming` 请求转为 `aborted_by_restart` | 临时 SQLite 请求状态恢复测试（L1） |
 | FR-KEY-001、NFR-SEC-002/003 | `apps/core/internal/controlplane/local_key_handler.go`、`apps/core/cmd/aggregation-hub-core/main_test.go`、`apps/desktop/src-tauri/src/control_client.rs`、`apps/desktop/src/app/App.tsx` | 单次 Local Key 创建经 Rust Tauri bridge 交付给当前 WebView 内存；管理令牌、Control URL、CredentialStore 引用和上游凭据不进入 WebView；Data Plane 认证闭环 | Core 启动级 SQLite/HTTP 集成、Rust bridge 单元、React UI 单元测试（L1） |
+| FR-OBS-004/006、NFR-SEC-003/005、AC-004 | `apps/core/internal/observability/{logger,diagnostics_recorder}.go`、`apps/core/internal/observability/diagnostics/`、`apps/core/internal/controlplane/diagnostics_handler.go`、`apps/desktop/src/pages/DiagnosticsPage.tsx`、`tests/e2e/diagnostics-secret-scan.ps1` | 失败请求的受限安全摘要、固定诊断 ZIP allowlist、管理令牌鉴权、固定目录打开和无绝对路径响应 | Go 单元/Control Plane 测试、React 诊断页测试、Rust 固定目录测试、ZIP 安全与 Sentinel 拒绝脚本、`pnpm check` 和 Race（L1） |
 ## 4. 非功能需求
 
 | 需求 | 控制 | 验证 |

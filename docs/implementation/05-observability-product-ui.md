@@ -118,19 +118,19 @@ pnpm core:test:race
 
 **Interfaces:** Produces structured `SafeLogger`, diagnostics ZIP metadata and open-known-directory command。
 
-- [ ] **Step 1: 写 Sentinel Secret 失败测试**
+- [x] **Step 1: 写 Sentinel Secret 失败测试**
 
-使用 Bearer、x-api-key、OAuth code、Tool arguments、Prompt 和带 Query URL 形态的 Sentinel，先证明未加保护时扫描失败。
+已覆盖 Bearer、x-api-key、OAuth code、Tool arguments、Prompt、带 Query URL 和疑似 API Key 的 Sentinel；新增 ZIP 扫描脚本同时验证安全归档通过、含 Sentinel 的归档被拒绝。
 
-- [ ] **Step 2: 实现类型与字段级保护**
+- [x] **Step 2: 实现类型与字段级保护**
 
-结构化字段拒绝 `SecretValue`；URL/Header 使用专用安全格式；Sink Regex 仅作为纵深防御。
+SafeLogger 仅接收受限错误元数据，并通过 RequestRecorder 装饰器接入失败终态；URL 去除 UserInfo、Query 和 Fragment，危险文本与标识符拒绝或脱敏，ZIP 二次扫描作为纵深防御。
 
-- [ ] **Step 3: 实现诊断 allowlist**
+- [x] **Step 3: 实现诊断 allowlist**
 
-只导出版本、运行时、迁移、CredentialStore Probe、Provider Health Summary 和近期安全错误；排除数据库、完整配置和任意路径。
+已实现精确 ZIP allowlist：运行时、迁移、CredentialStore Probe、Provider Health、最近安全错误和 manifest；拒绝未知、缺失、路径穿越与包含 Sentinel 的条目，不导出数据库、完整配置或任意路径。
 
-- [ ] **Step 4: 验证 ZIP 与 UI**
+- [x] **Step 4: 验证 ZIP 与 UI**
 
 ```powershell
 cd apps/core
@@ -140,7 +140,7 @@ pnpm web:test
 powershell -NoProfile -File tests/e2e/diagnostics-secret-scan.ps1
 ```
 
-Expected: ZIP 无路径穿越、绝对路径和 Sentinel；UI 只打开受控目录。Suggested commit when authorized: `feat(diagnostics): export redacted runtime evidence`。
+2026-08-16 已通过 Core 诊断/Control Plane/安全日志定向测试、ZIP 安全与拒绝 Sentinel 工件检查、OpenAPI lint、`pnpm check`（Desktop 22 项测试、Go 全量测试、Rust 17 项测试）与 `pnpm core:test:race`。证据为 L1；未执行真实 Provider、Claude Code、Codex 或 OAuth。Suggested commit when authorized: `feat(diagnostics): export redacted runtime evidence`。
 
 ---
 

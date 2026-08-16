@@ -10,10 +10,10 @@ mod runtime_commands;
 use core_process::CoreProcessManager;
 use runtime_commands::{
     create_local_key, create_manual_model, create_provider, dashboard_status, delete_manual_model,
-    delete_provider, disable_model, disable_provider, enable_model, enable_provider, list_models,
-    runtime_restart, runtime_start, runtime_status, runtime_stop, sync_provider_models,
-    test_local_responses, test_provider, update_model_capabilities, update_model_limits,
-    update_provider,
+    delete_provider, diagnostics_export, diagnostics_summary, disable_model, disable_provider,
+    enable_model, enable_provider, list_models, open_diagnostics_directory, runtime_restart,
+    runtime_start, runtime_status, runtime_stop, sync_provider_models, test_local_responses,
+    test_provider, update_model_capabilities, update_model_limits, update_provider,
 };
 use tauri::Manager;
 
@@ -31,6 +31,9 @@ fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime_status,
             dashboard_status,
+            diagnostics_summary,
+            diagnostics_export,
+            open_diagnostics_directory,
             create_local_key,
             create_provider,
             update_provider,

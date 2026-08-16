@@ -418,6 +418,36 @@ paths:
         '404': { $ref: '#/components/responses/ControlPlaneError' }
         '409': { $ref: '#/components/responses/ControlPlaneError' }
         '500': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/diagnostics:
+    get:
+      operationId: getDiagnosticsSummary
+      summary: 查询脱敏诊断摘要
+      description: 返回运行时可安全展示的诊断能力，不包含错误原文、凭据、文件绝对路径或数据库内容。
+      security:
+        - ManagementToken: []
+      responses:
+        '200':
+          description: 可安全展示的诊断摘要
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiagnosticsSummary' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/diagnostics/export:
+    post:
+      operationId: exportDiagnostics
+      summary: 手动导出脱敏诊断包
+      description: 仅写入 Core 控制的 diagnostics 目录；响应不包含绝对路径，且不会自动上传。
+      security:
+        - ManagementToken: []
+      responses:
+        '201':
+          description: 已生成的诊断包元数据
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiagnosticsExport' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
 components:
   securitySchemes:
     ManagementToken:
@@ -456,6 +486,26 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ControlPlaneError' }
   schemas:
+    DiagnosticsSummary:
+      type: object
+      additionalProperties: false
+      required: [format_version, recent_error_count, export_available]
+      properties:
+        format_version: { type: string, const: diagnostics/v1 }
+        recent_error_count: { type: integer, minimum: 0, maximum: 100 }
+        export_available: { type: boolean }
+    DiagnosticsExport:
+      type: object
+      additionalProperties: false
+      required: [file_name, size_bytes, generated_at, format_version]
+      properties:
+        file_name:
+          type: string
+          pattern: '^aggregation-hub-diagnostics-[0-9TZ.]+\.zip$'
+          maxLength: 128
+        size_bytes: { type: integer, minimum: 0 }
+        generated_at: { type: string, format: date-time }
+        format_version: { type: string, const: diagnostics/v1 }
     RuntimeStatus:
       type: object
       additionalProperties: false

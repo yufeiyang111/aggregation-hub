@@ -210,6 +210,24 @@ pub struct SyncModelsResult {
     pub discovered: i64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DiagnosticsSummary {
+    pub format_version: String,
+    pub recent_error_count: i64,
+    pub export_available: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DiagnosticsExport {
+    pub file_name: String,
+    pub size_bytes: i64,
+    pub generated_at: String,
+    pub format_version: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct EmptyRequest {}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct DashboardSnapshot {
     pub runtime: RuntimeSnapshot,
@@ -695,6 +713,49 @@ impl CoreProcessManager {
             runtime,
             providers: page.data,
         })
+    }
+
+    pub fn diagnostics(&self) -> Result<DiagnosticsSummary, String> {
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::get_json(
+            &ready.control_url,
+            token.as_str(),
+            "/internal/v1/diagnostics",
+        )
+    }
+
+    pub fn export_diagnostics(&self) -> Result<DiagnosticsExport, String> {
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::post_json(
+            &ready.control_url,
+            token.as_str(),
+            "/internal/v1/diagnostics/export",
+            &EmptyRequest {},
+        )
     }
 
     pub fn list_models(&self, query: ModelListQuery) -> Result<ModelPage, String> {

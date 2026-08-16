@@ -115,6 +115,8 @@ V1 不提供“忽略证书错误”和全局自定义 CA。证书失败显示�
 
 禁止：Authorization、x-api-key、Cookie、OAuth code/state/verifier/Token、Prompt、回复、Tool 参数、完整 Body、带 Query 授权 URL、用户目录绝对路径和数据库转储。
 
+诊断包只能由用户手动导出到应用受控目录，固定包含运行时摘要、迁移、CredentialStore Probe、Provider Health、最近安全错误和 manifest；不得打包 SQLite、备份、完整配置、请求正文、完整 URL Query 或任意用户路径。桌面端只能打开该固定目录，不能传入文件路径或 Shell 参数。
+
 测试向所有入口注入哨兵秘密，并扫描应用日志、SQLite、诊断包和崩溃输出。
 
 ## 6. 安全默认值
