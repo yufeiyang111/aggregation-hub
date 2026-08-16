@@ -184,17 +184,17 @@ Expected: PASS。前端 typecheck/lint/18 项测试、Rust 16 项测试和仓库
 
 **Interfaces:** Produces repeatable L4 evidence；consumes installed Codex、real Responses-compatible Provider、local Core。
 
-- [ ] **Step 1: 实现安全前置检查**
+- [x] **Step 1: 实现安全前置检查**
 
-验证 Codex 可执行文件、版本和所需环境变量，不输出 Secret；创建临时 Codex home/config 指向 Aggregation Hub，不修改用户生产配置。
+已新增 `tests/live/codex-smoke.ps1`：验证 Codex 可执行文件、版本、回环 `/v1` 地址、Public Model ID 和环境变量名称；创建临时 `CODEX_HOME/config.toml` 指向 Aggregation Hub，不修改用户生产配置。默认仅预检，只有显式 `-RunLive` 才读取当前进程中的 Local Access Key。
 
 - [ ] **Step 2: 运行真实 Function 场景**
 
-使用无敏感数据的临时仓库执行流式编码请求和至少一次 Function/Tool 操作，记录请求 ID、Provider/模型标签、退出码和结果。
+脚本已提供显式 `-RunLive` 的无敏感数据 Tool/Function 场景：隔离临时工作目录、`codex exec --json`、固定成功标记，以及本地访问密钥输出扫描。尚未使用真实 Provider/Codex 执行，不能声明 L4。
 
 - [ ] **Step 3: 运行取消场景**
 
-取消运行中的请求，断言 Core 状态为 `cancelled`、上游 Body 关闭、无重试和重复终态。
+取消端到端断言依赖后续可观测性请求追踪；当前不得用终止 Codex 进程替代 Core `cancelled`、上游 Body 关闭、无重试和重复终态的验证。
 
 - [ ] **Step 4: 扫描敏感数据**
 
@@ -202,7 +202,7 @@ Expected: PASS。前端 typecheck/lint/18 项测试、Rust 16 项测试和仓库
 
 - [ ] **Step 5: 记录证据并执行总门禁**
 
-记录真实执行日期、Codex 版本、命令、Provider/模型、结果和限制到本地未跟踪证据文件；公开矩阵仅写脱敏摘要。运行：
+真实运行时记录执行日期、Codex 版本、命令、Provider/模型、结果和限制到本地未跟踪证据文件；公开矩阵仅写脱敏摘要。当前仅完成安全预检脚本，尚未执行 L4。运行：
 
 ```powershell
 pnpm check

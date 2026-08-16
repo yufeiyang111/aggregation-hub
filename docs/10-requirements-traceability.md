@@ -133,3 +133,6 @@
 脚手架建立后，每项任务维护：需求 ID -> 设计章节 -> 代码文件 -> 测试 -> 验证命令 -> 真实证据。PR 描述列出受影响需求 ID；无需求 ID 的维护改动需关联 Issue 或 ADR。
 
 2026-08-14 已记录：Phase 1 Task 1.1 覆盖 `NFR-REL-002~003`、`NFR-MAIN-003~004`，证据为真实临时 SQLite 的 L1 测试；不声称 Provider、Claude Code、Codex 或 OAuth 可用。
+
+2026-08-16 已记录：Phase 4 Task 4.5 新增 `tests/live/codex-smoke.ps1` 和使用说明，覆盖隔离 `CODEX_HOME`、仅回环 `/v1`、显式 `-RunLive` Tool/Function smoke 与 Local Access Key 输出扫描；本次仅完成脚本语法、预检和项目门禁（L1），尚未执行真实 Provider/Codex，取消端到端断言待可观测性阶段。
+
