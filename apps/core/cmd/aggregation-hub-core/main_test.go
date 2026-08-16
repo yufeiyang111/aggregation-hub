@@ -42,6 +42,50 @@ func TestOpenRuntimeDatabaseCreatesExpectedLayoutAndMigrates(t *testing.T) {
 	}
 }
 
+func TestOpenRuntimeDatabaseAppliesScheduledRestoreBeforeBinding(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "AggregationHub")
+	database, err := openRuntimeDatabase(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().UnixMilli()
+	if _, err := database.Exec(`INSERT INTO app_settings(key,value_json,updated_at) VALUES(?,?,?)`, "ui.theme", `"before"`, now); err != nil {
+		t.Fatal(err)
+	}
+	backups, err := storage.NewBackupManager(database, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := backups.Create(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`UPDATE app_settings SET value_json=?,updated_at=? WHERE key='ui.theme'`, `"after"`, now+1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backups.ScheduleRestore(context.Background(), source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err = openRuntimeDatabase(dataDir)
+	if err != nil {
+		t.Fatalf("启动时应用恢复失败: %v", err)
+	}
+	defer database.Close()
+	var value string
+	if err := database.QueryRow(`SELECT value_json FROM app_settings WHERE key='ui.theme'`).Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != `"before"` {
+		t.Fatalf("启动恢复后设置=%s", value)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "aggregation-hub.pre-restore.db")); !os.IsNotExist(err) {
+		t.Fatalf("恢复校验成功后应清理临时回退副本: %v", err)
+	}
+}
+
 func TestOpenRuntimeDatabaseCanReopenExistingData(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "AggregationHub")
 	database, err := openRuntimeDatabase(dataDir)

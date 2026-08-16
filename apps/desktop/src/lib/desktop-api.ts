@@ -227,6 +227,37 @@ export interface UsageSummary {
 }
 export interface UsageTimeSeriesPoint extends UsageSummary { date_utc: string; }
 export interface UsageTimeSeries { data: UsageTimeSeriesPoint[]; }
+export interface RuntimeSettings {
+  listen_port: number;
+  request_timeout_ms: number;
+  request_retention_days: number;
+  version: number;
+}
+
+export interface UpdateRuntimeSettingsResult {
+  settings: RuntimeSettings;
+  restart_required: boolean;
+}
+
+export interface RetentionResult {
+  deleted_requests: number;
+  batches: number;
+  cutoff: string;
+}
+
+export interface BackupRecord {
+  id: string;
+  created_at: string;
+  size_bytes: number;
+}
+
+export interface BackupPage { data: BackupRecord[]; }
+
+export interface RestoreSchedule {
+  safety_backup: BackupRecord;
+  restart_required: boolean;
+}
+
 export interface OneTimeLocalKey {
   id: string;
   name: string;
@@ -268,6 +299,12 @@ export const desktopApi = {
   getRequest: (id: string) => invoke<RequestMetadata>("get_request", { id }),
   usageSummary: (query: UsageQuery) => invoke<UsageSummary>("usage_summary", { query }),
   usageTimeSeries: (query: UsageQuery) => invoke<UsageTimeSeries>("usage_time_series", { query }),
+  runtimeSettings: () => invoke<RuntimeSettings>("runtime_settings"),
+  updateRuntimeSettings: (input: RuntimeSettings) => invoke<UpdateRuntimeSettingsResult>("update_runtime_settings", { input }),
+  pruneRequests: () => invoke<RetentionResult>("prune_requests"),
+  listBackups: () => invoke<BackupPage>("list_backups"),
+  createBackup: () => invoke<BackupRecord>("create_backup"),
+  scheduleRestore: (backup_id: string) => invoke<RestoreSchedule>("schedule_restore", { backup_id }),
   updateModelCapabilities: (id: string, input: UpdateModelCapabilitiesInput) => invoke<ModelSummary>("update_model_capabilities", { id, input }),
   updateModelLimits: (id: string, input: UpdateModelLimitsInput) => invoke<ModelSummary>("update_model_limits", { id, input }),
   createManualModel: (provider_id: string, input: CreateManualModelInput) => invoke<ModelSummary>("create_manual_model", { provider_id, input }),

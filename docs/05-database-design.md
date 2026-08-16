@@ -305,3 +305,10 @@ CREATE INDEX idx_requests_status_created ON requests(status, created_at DESC);
 ```
 
 `provider_headers`、`model_prices`、`provider_health_checks`、`usage_daily` 和 `audit_events` 按前文语义建立迁移，并在实施计划中给出完整 SQL 与 Repository 测试。
+
+
+## Task 5.6 实施补充：运行时设置与恢复
+
+新增前向迁移 `0005_runtime_settings_revision.sql`，以单例 `runtime_settings_revision` 为受控运行时设置提供版本号。`app_settings` 仍只保存 allowlist 的 JSON 值；端口、全局请求超时和请求保留期通过同一事务的版本比较后一起写入，避免桌面端保存半套配置。
+
+SQLite 主库仍是 `aggregation-hub.db`。受控备份位于 `backups/backup-*.db`，恢复计划只会写入同目录根下固定的 `restore-pending.db`，不会接受 WebView 或 API 提供的任意文件路径。下次启动在打开主库前校验 pending 快照；如存在当前主库，先改名保存为 `aggregation-hub.pre-restore.db`，再替换主库并移除仅属于旧库的固定 `-wal`/`-shm` 辅助文件。迁移失败不 reset；恢复替换期间的 pre-restore 文件与已创建的安全备份仍可用于人工恢复。恢复后的主库成功完成迁移和启动恢复检查后，才会清理该临时 pre-restore 文件。

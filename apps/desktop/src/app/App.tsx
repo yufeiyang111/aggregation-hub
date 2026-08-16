@@ -4,6 +4,7 @@ import { DiagnosticsPage } from "../pages/DiagnosticsPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { RequestListPage } from "../pages/RequestListPage";
 import { UsagePage } from "../pages/UsagePage";
+import { SettingsPage } from "../pages/SettingsPage";
 import { desktopApi, type CreateManualModelInput, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelLimitOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
 import { EmptyState } from "../components/EmptyState";
 import { StatusDot } from "../components/StatusDot";
@@ -716,53 +717,6 @@ function ModelChangeDialog({ change, pending, onConfirm, onCancel }: { change: P
   );
 }
 
-function SettingsPage({
-  runtime,
-  loading,
-  actionPending,
-  onRefresh,
-  onStartOrRestart,
-}: {
-  runtime: RuntimeSnapshot | undefined;
-  loading: boolean;
-  actionPending: boolean;
-  onRefresh: () => void;
-  onStartOrRestart: () => void;
-}) {
-  const shouldStart = runtime?.state === "stopped" || runtime?.state === "failed";
-
-  return (
-    <section className="page-section" aria-labelledby="settings-title">
-      <div className="page-heading">
-        <div>
-          <h1 id="settings-title">设置</h1>
-          <p>查看当前桌面端和本地网关的基础信息。</p>
-        </div>
-      </div>
-      <section className="settings-list" aria-label="网关设置">
-        <div className="settings-row">
-          <div>
-            <h2>当前版本</h2>
-            <p>{runtime?.version ?? "—"}</p>
-          </div>
-        </div>
-        <div className="settings-row">
-          <div>
-            <h2>运行状态</h2>
-            <p>{runtime ? runtimeLabels[runtime.state] : "正在读取"}</p>
-          </div>
-          <div className="button-group">
-            <button type="button" className="button button-secondary" onClick={onRefresh} disabled={loading || actionPending}>刷新</button>
-            <button type="button" className="button button-primary" onClick={onStartOrRestart} disabled={!runtime || actionPending}>
-              {shouldStart ? "启动网关" : "重启网关"}
-            </button>
-          </div>
-        </div>
-      </section>
-    </section>
-  );
-}
-
 export function App() {
   const [dashboard, setDashboard] = useState<DashboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1260,7 +1214,7 @@ export function App() {
       return <ClientConfigPage runtime={runtime} actionPending={actionPending} keyName={keyName} oneTimeKey={oneTimeKey} copyState={copyState} addressCopyState={addressCopyState} onKeyNameChange={setKeyName} onCreateKey={handleCreateKey} onCopyKey={handleCopyKey} onCopyAddress={handleCopyAddress} codexModelID={codexModelID} codexCopyState={codexCopyState} onCodexModelIDChange={setCodexModelID} onCopyCodexConfig={handleCopyCodexConfig} canTest={oneTimeKey !== null && codexModelID.trim() !== ""} testPending={codexTestPending} testResult={codexTestResult} onTest={handleTestCodexResponses} />;
     }
     if (activePage === "logs") return <DiagnosticsPage />;
-    return <SettingsPage runtime={runtime} loading={loading} actionPending={actionPending} onRefresh={handleRefresh} onStartOrRestart={handleStartOrRestart} />;
+    return <SettingsPage runtime={runtime} loading={loading} actionPending={actionPending} onRefreshRuntime={handleRefresh} onRestartRuntime={handleStartOrRestart} />;
   };
 
   const shouldStart = runtime?.state === "stopped" || runtime?.state === "failed";

@@ -204,7 +204,7 @@ POST /internal/v1/models/{id}/test
 ```
 
 列表支持 Provider、状态、能力、搜索和分页；page_size 默认 50、最大 200。
-
+
 #### 当前实现边界
 
 当前 Core 已实现模型目录的 `GET /internal/v1/models`，支持 `provider_id`、`lifecycle_status`、`enabled`、`capability`、`search` 和游标分页；以及模型启停、能力覆盖、手工创建、参数覆盖和手工删除接口。除创建外，全部写入操作必须携带 `version`，冲突返回 `409 stale_resource`。
@@ -240,6 +240,23 @@ POST /internal/v1/maintenance/prune
 `GET /internal/v1/diagnostics` 返回固定版本、最近安全错误计数和导出能力；不返回错误原文、请求正文、凭据、数据库内容或诊断目录绝对路径。`POST /internal/v1/diagnostics/export` 只能由管理令牌显式触发，生成固定 allowlist 的 ZIP，并只返回文件名、大小、生成时间和格式版本；不会自动上传，WebView 也不能指定目标路径。
 
 修改监听端口返回 `restart_required: true`，不得静默重启中断请求。
+
+### 设置、保留与备份恢复
+
+当前 Core 提供下列受 Management Token 保护的固定维护接口：
+
+```text
+GET/PATCH /internal/v1/settings
+POST      /internal/v1/maintenance/prune
+GET/POST  /internal/v1/maintenance/backups
+POST      /internal/v1/maintenance/restore
+```
+
+`GET/PATCH /internal/v1/settings` 只读写 `listen_port`、`request_timeout_ms`、`request_retention_days` 与 `version`；Host 固定为 `127.0.0.1`，不会作为字段返回或接受。PATCH 使用独立设置版本乐观锁，端口和全局请求超时变更返回 `restart_required`，桌面端不会静默重启。
+
+请求保留只处理已终态、已完成的脱敏 `requests` 元数据，并按最多 500 条一批删除。`usage_daily` 在请求转为终态的同一 SQLite 事务中完成 Token 汇总，因此清理请求不会重新汇总、更不会删除既有日用量。每一个实际删除批次都写入无秘密审计事件。
+
+备份只能写入数据目录下受控的 `backups/`，响应只含 ID、创建时间和大小。创建过程先执行被动 WAL checkpoint，再使用 SQLite 一致性快照并进行 `integrity_check`；最多保留最近五份。恢复请求只接受受控备份 ID：先将已验证的所选快照暂存到受控临时文件，再创建当前数据库安全备份，最后写入固定 `restore-pending.db`。下一次 Core 启动时，在 Data Plane 绑定监听端口前验证并应用该 pending 快照；恢复替换期间保留单个固定 pre-restore 文件；只有恢复后的主库完成迁移和启动恢复检查后才会清理它，任何失败都不会自动 reset 或覆盖该回退证据。
 
 ## 6. 幂等与并发
 

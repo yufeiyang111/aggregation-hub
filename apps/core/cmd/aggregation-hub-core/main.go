@@ -27,6 +27,7 @@ import (
 	anthropicingress "aggregationhub.local/core/internal/ingress/anthropic"
 	openaiingress "aggregationhub.local/core/internal/ingress/openai_chat"
 	responsesingress "aggregationhub.local/core/internal/ingress/openai_responses"
+	"aggregationhub.local/core/internal/maintenance"
 	"aggregationhub.local/core/internal/management"
 	"aggregationhub.local/core/internal/observability"
 	"aggregationhub.local/core/internal/observability/diagnostics"
@@ -64,6 +65,40 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		return 1
 	}
 	defer database.Close()
+	settingsRepository, err := storage.NewSettingsRepository(database)
+	if err != nil {
+		logger.Print("设置仓储初始化失败")
+		return 1
+	}
+	retentionRepository, err := storage.NewRetentionRepository(database)
+	if err != nil {
+		logger.Print("数据保留仓储初始化失败")
+		return 1
+	}
+	backupManager, err := storage.NewBackupManager(database, secrets.DataDir)
+	if err != nil {
+		logger.Print("备份管理器初始化失败")
+		return 1
+	}
+	maintenanceService, err := maintenance.NewService(settingsRepository, retentionRepository, backupManager)
+	if err != nil {
+		logger.Print("维护服务初始化失败")
+		return 1
+	}
+	runtimeSettings, err := maintenanceService.Settings(context.Background())
+	if err != nil {
+		logger.Print("运行时设置读取失败")
+		return 1
+	}
+	// 测试可显式传入端口 0；正式默认端口才由持久化设置覆盖。
+	if cfg.ListenPort == maintenance.DefaultListenPort {
+		cfg.ListenPort = runtimeSettings.ListenPort
+	}
+	retentionContext, cancelRetention := context.WithTimeout(context.Background(), 10*time.Second)
+	if _, err := maintenanceService.PruneRequests(retentionContext); err != nil {
+		logger.Print("启动时数据保留清理失败")
+	}
+	cancelRetention()
 	localKeyRepository, err := storage.NewLocalKeyRepository(database)
 	if err != nil {
 		logger.Print("Local Access Key 仓储初始化失败")
@@ -135,7 +170,7 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("Anthropic Adapter 注册失败")
 		return 1
 	}
-	gate, err := gateway.New(router, credentialStore, registry, transport.NewFactory(security.NetworkPolicy{}, transport.Options{}))
+	gate, err := gateway.NewWithOptions(router, credentialStore, registry, transport.NewFactory(security.NetworkPolicy{}, transport.Options{}), gateway.Options{RequestTimeout: time.Duration(runtimeSettings.RequestTimeoutMS) * time.Millisecond})
 	if err != nil {
 		logger.Print("Gateway 初始化失败")
 		return 1
@@ -202,6 +237,7 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		Diagnostics:        diagnosticsExporter,
 		RequestReader:      requestRepository,
 		UsageReader:        usageRepository,
+		Maintenance:        maintenanceService,
 		ProviderService:    providerService,
 		ProviderReader:     providerRepository,
 		ProviderOperations: providerOperations,
@@ -254,6 +290,11 @@ func openRuntimeDatabase(dataDir string) (*sql.DB, error) {
 			return nil, fmt.Errorf("创建运行目录失败: %w", err)
 		}
 	}
+	// 待恢复快照只会在下一次启动、Data Plane 绑定端口之前应用。
+	restoreApplied, err := storage.ApplyPendingRestore(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("应用待恢复快照失败: %w", err)
+	}
 	database, err := storage.Open(filepath.Join(dataDir, "aggregation-hub.db"))
 	if err != nil {
 		return nil, err
@@ -265,6 +306,12 @@ func openRuntimeDatabase(dataDir string) (*sql.DB, error) {
 	if _, err := observability.RecoverInFlightRequests(context.Background(), database, time.Now()); err != nil {
 		_ = database.Close()
 		return nil, err
+	}
+	if restoreApplied {
+		if err := storage.FinalizePendingRestore(dataDir); err != nil {
+			_ = database.Close()
+			return nil, err
+		}
 	}
 	return database, nil
 }

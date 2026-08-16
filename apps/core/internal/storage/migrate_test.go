@@ -82,6 +82,7 @@ func TestMigrateCreatesAllV1Tables(t *testing.T) {
 		"requests",
 		"usage_daily",
 		"audit_events",
+		"runtime_settings_revision",
 	}
 	for _, tableName := range requiredTables {
 		var count int
@@ -124,6 +125,11 @@ func TestMigrateRollsBackFailedMigrationWithoutResettingDatabase(t *testing.T) {
 		"0004_broken.sql":                      &fstest.MapFile{Data: []byte("CREATE TABLE broken (id INTEGER;\n")},
 	}
 
+	var beforeMigrationCount int
+	if err := database.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&beforeMigrationCount); err != nil {
+		t.Fatalf("读取迁移前记录失败: %v", err)
+	}
+
 	err := storage.Migrate(context.Background(), database, brokenMigrations)
 	if err == nil {
 		t.Fatal("非法迁移不应被接受")
@@ -133,8 +139,8 @@ func TestMigrateRollsBackFailedMigrationWithoutResettingDatabase(t *testing.T) {
 	if err := database.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("查询迁移记录失败: %v", err)
 	}
-	if migrationCount != 4 {
-		t.Fatalf("失败迁移不得写入记录，实际记录数=%d", migrationCount)
+	if migrationCount != beforeMigrationCount {
+		t.Fatalf("失败迁移不得写入记录，实际记录数=%d，期望=%d", migrationCount, beforeMigrationCount)
 	}
 
 	var providerTableCount int

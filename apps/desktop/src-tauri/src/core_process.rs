@@ -250,6 +250,59 @@ pub struct DashboardSnapshot {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RuntimeSettings {
+    pub listen_port: i64,
+    pub request_timeout_ms: i64,
+    pub request_retention_days: i64,
+    pub version: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateRuntimeSettingsInput {
+    pub listen_port: i64,
+    pub request_timeout_ms: i64,
+    pub request_retention_days: i64,
+    pub version: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateRuntimeSettingsResult {
+    pub settings: RuntimeSettings,
+    pub restart_required: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RetentionResult {
+    pub deleted_requests: i64,
+    pub batches: i64,
+    pub cutoff: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BackupRecord {
+    pub id: String,
+    pub created_at: String,
+    pub size_bytes: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BackupPage {
+    pub data: Vec<BackupRecord>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RestoreSchedule {
+    pub safety_backup: BackupRecord,
+    pub restart_required: bool,
+}
+
+#[derive(Serialize)]
+struct RestoreRequest {
+    backup_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelCapabilities {
     pub streaming: bool,
     pub tools: bool,
@@ -807,6 +860,14 @@ pub(crate) fn build_model_list_path(query: &ModelListQuery) -> Result<String, St
     Ok(format!("/internal/v1/models?{query}"))
 }
 
+fn valid_backup_id(value: &str) -> bool {
+    value.starts_with("backup-")
+        && value.len() <= 100
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+        })
+}
+
 fn valid_model_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= 64 && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
 }
@@ -964,6 +1025,49 @@ impl CoreProcessManager {
         self.get_control_json(&path)
     }
 
+    pub fn settings(&self) -> Result<RuntimeSettings, String> {
+        self.get_control_json("/internal/v1/settings")
+    }
+
+    pub fn update_settings(
+        &self,
+        input: UpdateRuntimeSettingsInput,
+    ) -> Result<UpdateRuntimeSettingsResult, String> {
+        if input.listen_port < 1024
+            || input.listen_port > 65535
+            || input.request_timeout_ms < 1000
+            || input.request_timeout_ms > 3_600_000
+            || input.request_retention_days < 1
+            || input.request_retention_days > 3650
+            || input.version < 0
+        {
+            return Err("设置参数无效".to_owned());
+        }
+        self.patch_control_json("/internal/v1/settings", &input)
+    }
+
+    pub fn prune_requests(&self) -> Result<RetentionResult, String> {
+        self.post_control_json("/internal/v1/maintenance/prune", &())
+    }
+
+    pub fn list_backups(&self) -> Result<BackupPage, String> {
+        self.get_control_json("/internal/v1/maintenance/backups")
+    }
+
+    pub fn create_backup(&self) -> Result<BackupRecord, String> {
+        self.post_control_json("/internal/v1/maintenance/backups", &())
+    }
+
+    pub fn schedule_restore(&self, backup_id: String) -> Result<RestoreSchedule, String> {
+        if !valid_backup_id(&backup_id) {
+            return Err("备份标识无效".to_owned());
+        }
+        self.post_control_json(
+            "/internal/v1/maintenance/restore",
+            &RestoreRequest { backup_id },
+        )
+    }
+
     fn get_control_json<T: for<'a> Deserialize<'a>>(&self, path: &str) -> Result<T, String> {
         let inner = self.lock()?;
         if inner.lifecycle.snapshot().state != RuntimeState::Running {
@@ -979,6 +1083,48 @@ impl CoreProcessManager {
             .as_ref()
             .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
         control_client::get_json(&ready.control_url, token.as_str(), path)
+    }
+
+    fn post_control_json<Request: Serialize, Response: for<'a> Deserialize<'a>>(
+        &self,
+        path: &str,
+        request: &Request,
+    ) -> Result<Response, String> {
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::post_json(&ready.control_url, token.as_str(), path, request)
+    }
+
+    fn patch_control_json<Request: Serialize, Response: for<'a> Deserialize<'a>>(
+        &self,
+        path: &str,
+        request: &Request,
+    ) -> Result<Response, String> {
+        let inner = self.lock()?;
+        if inner.lifecycle.snapshot().state != RuntimeState::Running {
+            return Err("Core 尚未运行".to_owned());
+        }
+        let ready = inner
+            .lifecycle
+            .ready
+            .as_ref()
+            .ok_or_else(|| "Core 运行状态无效".to_owned())?;
+        let token = inner
+            .management_token
+            .as_ref()
+            .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
+        control_client::patch_json(&ready.control_url, token.as_str(), path, request)
     }
     pub fn list_models(&self, query: ModelListQuery) -> Result<ModelPage, String> {
         let path = build_model_list_path(&query)?;

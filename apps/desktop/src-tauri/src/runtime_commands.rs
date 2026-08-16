@@ -8,11 +8,12 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::core_process::{
-    CoreProcessManager, CreateManualModelInput, CreateProviderInput, DashboardSnapshot,
-    DiagnosticsExport, DiagnosticsSummary, ModelListQuery, ModelPage, ModelSummary,
-    OneTimeLocalKey, ProviderHealthPage, ProviderSummary, ProviderTestResult, RequestListQuery,
-    RequestMetadata, RequestPage, RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput,
-    UpdateProviderInput, UsageQuery, UsageSummary, UsageTimeSeries,
+    BackupPage, BackupRecord, CoreProcessManager, CreateManualModelInput, CreateProviderInput,
+    DashboardSnapshot, DiagnosticsExport, DiagnosticsSummary, ModelListQuery, ModelPage,
+    ModelSummary, OneTimeLocalKey, ProviderHealthPage, ProviderSummary, ProviderTestResult,
+    RequestListQuery, RequestMetadata, RequestPage, RestoreSchedule, RetentionResult,
+    RuntimeSettings, RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput,
+    UpdateProviderInput, UpdateRuntimeSettingsInput, UsageQuery, UsageSummary, UsageTimeSeries,
 };
 use crate::data_plane_client::{self, LocalResponsesTestResult};
 
@@ -72,6 +73,64 @@ pub async fn usage_time_series(
     tauri::async_runtime::spawn_blocking(move || manager.usage_time_series(query))
         .await
         .map_err(|_| "读取用量趋势失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn runtime_settings(
+    state: State<'_, CoreProcessManager>,
+) -> Result<RuntimeSettings, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.settings())
+        .await
+        .map_err(|_| "读取设置失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn update_runtime_settings(
+    input: UpdateRuntimeSettingsInput,
+    state: State<'_, CoreProcessManager>,
+) -> Result<super::core_process::UpdateRuntimeSettingsResult, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.update_settings(input))
+        .await
+        .map_err(|_| "更新设置失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn prune_requests(
+    state: State<'_, CoreProcessManager>,
+) -> Result<RetentionResult, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.prune_requests())
+        .await
+        .map_err(|_| "清理请求记录失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn list_backups(state: State<'_, CoreProcessManager>) -> Result<BackupPage, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.list_backups())
+        .await
+        .map_err(|_| "读取备份列表失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn create_backup(state: State<'_, CoreProcessManager>) -> Result<BackupRecord, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.create_backup())
+        .await
+        .map_err(|_| "创建备份失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn schedule_restore(
+    backup_id: String,
+    state: State<'_, CoreProcessManager>,
+) -> Result<RestoreSchedule, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.schedule_restore(backup_id))
+        .await
+        .map_err(|_| "计划恢复失败".to_owned())?
 }
 #[tauri::command]
 pub fn open_diagnostics_directory(app: AppHandle) -> Result<(), String> {

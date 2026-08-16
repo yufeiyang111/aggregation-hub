@@ -78,7 +78,7 @@ Aggregation Hub 将用户自己的多个 API 套餐、兼容渠道、本地模�
 
 设计已批准，逐任务实施计划已经建立。编码必须从 [Phase 0](./implementation/00-foundation.md) 开始，并遵守以下边界：
 
-- 当前已建立 Phase 0 工程骨架，但尚未实现 Provider、凭据、路由和客户端兼容等业务能力，不能把工程脚手架或文档完成等同于产品已实现；
+- 工程当前已推进至 Phase 5 的设置、观测和维护切片；具体完成状态以 `implementation/` 中对应 Task 的实施记录为准。任何未完成的真实 Provider、Claude Code、Codex、OAuth、干净 VM 或发布验证，不能因本地单元测试通过而视为已实现；
 - 依赖版本以总实施计划为初始基线，安装后必须提交对应锁文件；
 - Claude Code、Codex、真实 Provider 和 OAuth 兼容只能按 L3/L4/L5 真实证据声明；
 - 每个 Task 先写失败测试，再实现并执行计划中的验证命令；

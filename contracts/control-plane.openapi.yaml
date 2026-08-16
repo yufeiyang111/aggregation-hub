@@ -446,6 +446,112 @@ paths:
         '404': { $ref: '#/components/responses/ControlPlaneError' }
         '409': { $ref: '#/components/responses/ControlPlaneError' }
         '500': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/settings:
+    get:
+      operationId: getRuntimeSettings
+      summary: 查询受控运行时设置
+      description: 仅返回端口、全局请求超时、请求元数据保留期和版本；监听地址固定为 127.0.0.1，不能编辑。
+      security:
+        - ManagementToken: []
+      responses:
+        '200':
+          description: 当前运行时设置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RuntimeSettings' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
+    patch:
+      operationId: updateRuntimeSettings
+      summary: 更新受控运行时设置
+      description: 使用版本乐观锁；端口和全局请求超时的变更在显式重启 Core 后生效。
+      security:
+        - ManagementToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuntimeSettingsUpdateInput' }
+      responses:
+        '200':
+          description: 已保存设置及是否需要重启
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RuntimeSettingsUpdateResult' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '409': { $ref: '#/components/responses/ControlPlaneError' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/maintenance/prune:
+    post:
+      operationId: pruneExpiredRequests
+      summary: 手动清理过期请求元数据
+      description: 只删除已完成请求的脱敏元数据；日用量 Token 汇总在请求终态事务中已持久化，不会随之删除。
+      security:
+        - ManagementToken: []
+      responses:
+        '200':
+          description: 清理结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetentionResult' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/maintenance/backups:
+    get:
+      operationId: listBackups
+      summary: 列出受控数据库备份
+      description: 只返回备份 ID、创建时间和大小，不返回绝对路径。
+      security:
+        - ManagementToken: []
+      responses:
+        '200':
+          description: 固定备份目录中的备份
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupPage' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
+    post:
+      operationId: createBackup
+      summary: 创建 SQLite 一致性备份
+      description: 使用 WAL checkpoint 和 SQLite 快照写入固定 backups 目录，自动保留最近五份。
+      security:
+        - ManagementToken: []
+      responses:
+        '201':
+          description: 已创建备份元数据
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupRecord' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
+  /internal/v1/maintenance/restore:
+    post:
+      operationId: scheduleBackupRestore
+      summary: 计划恢复一个受控备份
+      description: 先将已验证的所选快照暂存到受控临时文件，再创建当前数据库的安全备份，最后提交固定 pending 快照；下一次 Core 启动会在 Data Plane 绑定监听端口前应用恢复。
+      security:
+        - ManagementToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [backup_id]
+              properties:
+                backup_id: { type: string, pattern: '^backup-[a-z0-9][a-z0-9.-]{0,94}$', maxLength: 100 }
+      responses:
+        '202':
+          description: 已计划恢复，需要用户显式重启 Core
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestoreSchedule' }
+        '400': { $ref: '#/components/responses/ControlPlaneError' }
+        '401': { $ref: '#/components/responses/InvalidManagementToken' }
+        '503': { $ref: '#/components/responses/ControlPlaneError' }
   /internal/v1/diagnostics:
     get:
       operationId: getDiagnosticsSummary
@@ -534,6 +640,57 @@ components:
         size_bytes: { type: integer, minimum: 0 }
         generated_at: { type: string, format: date-time }
         format_version: { type: string, const: diagnostics/v1 }
+    RuntimeSettings:
+      type: object
+      additionalProperties: false
+      required: [listen_port, request_timeout_ms, request_retention_days, version]
+      properties:
+        listen_port: { type: integer, minimum: 1024, maximum: 65535 }
+        request_timeout_ms: { type: integer, minimum: 1000, maximum: 3600000 }
+        request_retention_days: { type: integer, minimum: 1, maximum: 3650 }
+        version: { type: integer, minimum: 0 }
+    RuntimeSettingsUpdateInput:
+      allOf:
+        - $ref: '#/components/schemas/RuntimeSettings'
+    RuntimeSettingsUpdateResult:
+      type: object
+      additionalProperties: false
+      required: [settings, restart_required]
+      properties:
+        settings: { $ref: '#/components/schemas/RuntimeSettings' }
+        restart_required: { type: boolean }
+    RetentionResult:
+      type: object
+      additionalProperties: false
+      required: [deleted_requests, batches, cutoff]
+      properties:
+        deleted_requests: { type: integer, minimum: 0 }
+        batches: { type: integer, minimum: 0 }
+        cutoff: { type: string, format: date-time }
+    BackupRecord:
+      type: object
+      additionalProperties: false
+      required: [id, created_at, size_bytes]
+      properties:
+        id: { type: string, pattern: '^backup-[a-z0-9][a-z0-9.-]{0,94}$', maxLength: 100 }
+        created_at: { type: string, format: date-time }
+        size_bytes: { type: integer, minimum: 0 }
+    BackupPage:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/BackupRecord' }
+    RestoreSchedule:
+      type: object
+      additionalProperties: false
+      required: [safety_backup, restart_required]
+      properties:
+        safety_backup: { $ref: '#/components/schemas/BackupRecord' }
+        restart_required: { type: boolean, const: true }
     RuntimeStatus:
       type: object
       additionalProperties: false

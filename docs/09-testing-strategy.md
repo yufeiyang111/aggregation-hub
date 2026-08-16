@@ -90,3 +90,11 @@ PR：Go fmt/vet/lint/test、Rust fmt/clippy/test、TypeScript typecheck/lint/tes
 - 请求与用量查询：分页稳定性、参数上限、UTC 时间窗、未知 Token/缓存命中率、无 N+1 读取和安全 DTO。
 - 桌面页面：概览、请求记录、用量的 loading、empty、error、success；请求详情 Escape 关闭且明确提示未保存正文。
 - 不测试或声称价格、费用、真实 Provider、真实 Claude Code/Codex 或 OAuth 结果；这些均不在本任务证据范围内。
+
+
+## Task 5.6 覆盖补充（2026-08-16）
+
+- 真实临时 SQLite：请求保留按 500 条批处理、终态过滤、幂等、审计、取消，以及清理后 `usage_daily` Token 汇总仍存在。
+- 备份恢复：WAL checkpoint + SQLite 快照、`integrity_check`、最近五份淘汰、非法备份标识、取消、损坏 pending 快照拒绝、恢复前数据库留存，以及 Core 在监听端口前应用已计划恢复。
+- 设置：端口/超时/保留期边界、默认值、版本冲突和 `restart_required`；Control Plane、Rust bridge 与 React 设置页覆盖受控 DTO、二次确认和脱敏失败提示。
+- `tests/e2e/backup-restore.ps1` 是上述 L1 测试的可重复入口，不是干净虚拟机安装、真实 Provider、Claude Code 或 Codex E2E 证据。

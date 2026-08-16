@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"aggregationhub.local/core/internal/adapter"
 	"aggregationhub.local/core/internal/credential"
@@ -13,6 +14,12 @@ import (
 )
 
 var ErrGatewayDependency = errors.New("Gateway 依赖无效")
+
+const defaultRequestTimeout = 60 * time.Second
+
+type Options struct {
+	RequestTimeout time.Duration
+}
 
 type routeResolver interface {
 	Resolve(context.Context, string, provider.RequiredCapabilities) (routing.RoutePlan, error)
@@ -29,20 +36,34 @@ type clientFactory interface {
 
 // Service 串联路由、凭据、受控 Transport 与 Adapter；不记录或持久化请求正文及上游凭据。
 type Service struct {
-	router      routeResolver
-	credentials credentialReader
-	adapters    adapterFactory
-	clients     clientFactory
+	router         routeResolver
+	credentials    credentialReader
+	adapters       adapterFactory
+	clients        clientFactory
+	requestTimeout time.Duration
 }
 
 func New(router routeResolver, credentials credentialReader, adapters adapterFactory, clients clientFactory) (*Service, error) {
+	return NewWithOptions(router, credentials, adapters, clients, Options{})
+}
+
+// NewWithOptions 允许 Core 在启动时把受控全局请求超时应用到入口请求；更新后需重启 Core 才会生效。
+func NewWithOptions(router routeResolver, credentials credentialReader, adapters adapterFactory, clients clientFactory, options Options) (*Service, error) {
 	if router == nil || credentials == nil || adapters == nil || clients == nil {
 		return nil, ErrGatewayDependency
 	}
-	return &Service{router: router, credentials: credentials, adapters: adapters, clients: clients}, nil
+	if options.RequestTimeout == 0 {
+		options.RequestTimeout = defaultRequestTimeout
+	}
+	if options.RequestTimeout < time.Second || options.RequestTimeout > time.Hour {
+		return nil, ErrGatewayDependency
+	}
+	return &Service{router: router, credentials: credentials, adapters: adapters, clients: clients, requestTimeout: options.RequestTimeout}, nil
 }
 
 func (service *Service) Complete(ctx context.Context, request normalize.NormalizedRequest) (normalize.NormalizedResponse, error) {
+	ctx, cancel := service.requestContext(ctx)
+	defer cancel()
 	value, route, credentialValue, client, err := service.prepare(ctx, request)
 	if err != nil {
 		return normalize.NormalizedResponse{}, err
@@ -60,6 +81,8 @@ func (service *Service) Complete(ctx context.Context, request normalize.Normaliz
 }
 
 func (service *Service) Stream(ctx context.Context, request normalize.NormalizedRequest, emitter normalize.StreamEmitter) error {
+	ctx, cancel := service.requestContext(ctx)
+	defer cancel()
 	value, route, credentialValue, client, err := service.prepare(ctx, request)
 	if err != nil {
 		return err
@@ -114,4 +137,11 @@ func clearCredential(value adapter.Credential) {
 	for index := range value.Secret.Bytes {
 		value.Secret.Bytes[index] = 0
 	}
+}
+
+func (service *Service) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, service.requestTimeout)
 }

@@ -375,3 +375,19 @@ tbody tr:hover { background: #fafaf8; }
 .health-record-list span { color: #6b6b6b; font-size: 12px; }
 .health-record-list small { color: #8a3a2e; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
 .provider-health-dialog { width: min(620px, calc(100vw - 32px)); }
+.settings-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.settings-card { display: grid; align-content: start; gap: 12px; border: 1px solid #e1e1dd; border-radius: 8px; padding: 16px; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 2.5%); transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+.settings-card:hover { transform: translateY(-1px); border-color: #c8c8c4; box-shadow: 0 7px 18px rgb(0 0 0 / 6%); }
+.settings-card h2 { margin: 0; font-size: 14px; }
+.settings-card p { margin: 0; color: #6b6b67; font-size: 12px; line-height: 1.6; }
+.settings-card .form-field { display: grid; gap: 6px; color: #4d4d49; font-size: 12px; font-weight: 680; }
+.settings-actions { display: flex; justify-content: flex-end; grid-column: 1 / -1; }
+.maintenance-notice { margin: 16px 0 0; border: 1px solid #c8dfcf; border-radius: 7px; padding: 10px 12px; color: #276440; background: #f7fcf8; font-size: 13px; }
+.maintenance-backups { margin-top: 16px; }
+.backup-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.backup-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #e7e7e3; border-radius: 7px; padding: 10px 12px; background: #fafaf8; transition: transform .16s ease, box-shadow .16s ease; }
+.backup-list li:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgb(0 0 0 / 5%); }
+.backup-list li > div { display: grid; gap: 4px; min-width: 0; }
+.backup-list strong { color: #252525; font-size: 13px; }
+.backup-list span { color: #70706d; font-size: 12px; }
+@media (max-width: 760px) { .settings-form { grid-template-columns: 1fr; } .settings-actions { grid-column: auto; } .backup-list li { align-items: flex-start; flex-direction: column; } }

@@ -254,32 +254,32 @@ Expected: PASS。当前最高证据等级为 L1：Fake/单元、真实临时 SQL
 
 **Interfaces:** Produces prune、backup、restore and restart-required settings。
 
-- [ ] **Step 1: 写保留与恢复失败测试**
+- [x] **Step 1: 写保留与恢复失败测试**
 
-覆盖 Aggregate-before-delete、Batch Size、幂等、Audit、Cancel、WAL Checkpoint、迁移失败、Foreign Key 失败、磁盘满和权限失败。
+已覆盖真实临时 SQLite 下的终态过滤、日用量先于清理已汇总的保持、500 条批处理、幂等、审计、取消、WAL checkpoint、损坏 pending 快照拒绝、迁移后恢复以及非法备份标识。磁盘满、ACL 权限拒绝和文件系统级故障注入尚未具备可靠跨 Windows runner 模拟，保留给干净 VM/故障注入任务。
 
-- [ ] **Step 2: 实现受控备份**
+- [x] **Step 2: 实现受控备份**
 
-备份写入应用已知目录，保留最近五份；Restore 前拒绝新请求并先备份当前数据库；失败不得 reset。
+备份只写入固定 `backups/`，自动保留最近五份。恢复先生成安全备份并计划 pending 快照；下一次 Core 启动会在 Data Plane 监听前应用，因此恢复替换期间不会接受新的 Data Plane 请求。失败绝不 reset；恢复替换期间保留单个 pre-restore 回退数据库，只有主库完成迁移和启动恢复检查后才清理。
 
-- [ ] **Step 3: 实现设置验证**
+- [x] **Step 3: 实现设置验证**
 
-Port 1024~65535、Timeout 和 Retention 有上下限；V1 Host 不可编辑；Port Change 返回 `restart_required`。
+Port `1024~65535`、Timeout `1000~3600000ms`、Retention `1~3650` 天均有服务端和 Rust bridge 边界校验；Host 固定回环地址且未暴露为可编辑字段；端口和全局超时改变返回 `restart_required`，使用独立版本乐观锁。
 
-- [ ] **Step 4: 实现危险操作 UI**
+- [x] **Step 4: 实现危险操作 UI**
 
-Restore、Clear、Rotate 和 Delete 使用二次确认，禁用重复提交，并在失败时提供恢复建议。
+设置页采用独立组件与 hook，包含加载、成功、失败和空备份状态；恢复操作必须二次确认，保存/备份/清理/恢复期间禁用重复提交。Provider/Key 的删除和轮换仍使用其既有确认流程，本任务未新增不存在的危险操作。
 
 - [x] **Step 5: 验证**
 
 ```powershell
-pnpm contracts:check
+pnpm --dir apps/desktop exec redocly lint ..\..\contracts\control-plane.openapi.yaml
 pnpm core:test
 pnpm web:test
 powershell -NoProfile -File tests/e2e/backup-restore.ps1
 ```
 
-Expected: PASS；故障注入后原数据库和最近备份仍可恢复。Suggested commit when authorized: `feat(core): add retention backup and settings maintenance`。
+Expected: PASS。当前证据为 L1：真实临时 SQLite、Go Control Plane、Rust bridge 和 React 单元测试；未执行干净 VM 安装、磁盘满/ACL 故障注入、真实 Provider、Claude Code、Codex 或 OAuth。Suggested commit when authorized: `feat(core): add retention backup and settings maintenance`。
 
 ---
 
