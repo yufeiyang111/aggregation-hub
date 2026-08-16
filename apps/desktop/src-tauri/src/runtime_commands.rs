@@ -10,9 +10,9 @@ use tauri_plugin_opener::OpenerExt;
 use crate::core_process::{
     CoreProcessManager, CreateManualModelInput, CreateProviderInput, DashboardSnapshot,
     DiagnosticsExport, DiagnosticsSummary, ModelListQuery, ModelPage, ModelSummary,
-    OneTimeLocalKey, ProviderSummary, ProviderTestResult, RequestListQuery, RequestMetadata,
-    RequestPage, RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput, UpdateProviderInput,
-    UsageQuery, UsageSummary, UsageTimeSeries,
+    OneTimeLocalKey, ProviderHealthPage, ProviderSummary, ProviderTestResult, RequestListQuery,
+    RequestMetadata, RequestPage, RuntimeSnapshot, SyncModelsResult, UpdateModelLimitsInput,
+    UpdateProviderInput, UsageQuery, UsageSummary, UsageTimeSeries,
 };
 use crate::data_plane_client::{self, LocalResponsesTestResult};
 
@@ -210,6 +210,17 @@ pub async fn disable_provider(
     tauri::async_runtime::spawn_blocking(move || manager.set_provider_enabled(id, version, false))
         .await
         .map_err(|_| "停用服务失败".to_owned())?
+}
+
+#[tauri::command]
+pub async fn list_provider_health(
+    id: String,
+    state: State<'_, CoreProcessManager>,
+) -> Result<ProviderHealthPage, String> {
+    let manager = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.list_provider_health(id))
+        .await
+        .map_err(|_| "读取服务健康记录失败".to_owned())?
 }
 
 #[tauri::command]

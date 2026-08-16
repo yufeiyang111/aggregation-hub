@@ -13,6 +13,7 @@ const apiMocks = vi.hoisted(() => ({
   enableProvider: vi.fn(),
   disableProvider: vi.fn(),
   testProvider: vi.fn(),
+  listProviderHealth: vi.fn(),
   syncProviderModels: vi.fn(),
   listModels: vi.fn(),
   updateModelCapabilities: vi.fn(),
@@ -92,6 +93,7 @@ describe("App", () => {
     apiMocks.enableProvider.mockReset();
     apiMocks.disableProvider.mockReset();
     apiMocks.testProvider.mockReset();
+    apiMocks.listProviderHealth.mockReset();
     apiMocks.syncProviderModels.mockReset();
     apiMocks.listModels.mockReset();
     apiMocks.updateModelCapabilities.mockReset();
@@ -110,6 +112,7 @@ describe("App", () => {
     apiMocks.enableProvider.mockResolvedValue({ ...runningDashboard.providers[0], enabled: true, version: 2 });
     apiMocks.disableProvider.mockResolvedValue({ ...runningDashboard.providers[0], enabled: false, version: 2 });
     apiMocks.testProvider.mockResolvedValue({ success: true, code: "ok", message: "通过", http_status: 200, retryable: false });
+    apiMocks.listProviderHealth.mockResolvedValue({ data: [{ id: "health-1", check_type: "models", status: "failed", latency_ms: 23, error_code: "upstream_auth_failed", checked_at: "2026-08-16T08:00:00Z" }] });
     apiMocks.syncProviderModels.mockResolvedValue({ discovered: 1 });
     apiMocks.listModels.mockResolvedValue(modelPage);
     apiMocks.updateModelCapabilities.mockResolvedValue({ ...modelPage.data[0], version: 4, capabilities: { ...modelPage.data[0].capabilities, tools: false }, capability_override: { supports_streaming: true, supports_tools: false, supports_parallel_tools: false, supports_reasoning: false, supports_thinking: false, supports_vision: false } });
@@ -124,6 +127,19 @@ describe("App", () => {
     expect(screen.getByText("Package A")).toBeTruthy();
     expect(screen.getByText("https://example.test")).toBeTruthy();
     expect(apiMocks.dashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads recent provider health only when the user opens the record dialog", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("Package A");
+    expect(apiMocks.listProviderHealth).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "记录" }));
+
+    expect(await screen.findByRole("dialog", { name: "测试记录" })).toBeTruthy();
+    expect(await screen.findByText("upstream_auth_failed")).toBeTruthy();
+    expect(apiMocks.listProviderHealth).toHaveBeenCalledWith("provider-1");
   });
 
   it("keeps runtime details in the compact status menu", async () => {

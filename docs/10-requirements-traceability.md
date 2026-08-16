@@ -100,6 +100,7 @@
 | NFR-REL-004 | `apps/core/internal/observability/recovery.go` | 启动时仅将 `pending` / `streaming` 请求转为 `aborted_by_restart` | 临时 SQLite 请求状态恢复测试（L1） |
 | FR-KEY-001、NFR-SEC-002/003 | `apps/core/internal/controlplane/local_key_handler.go`、`apps/core/cmd/aggregation-hub-core/main_test.go`、`apps/desktop/src-tauri/src/control_client.rs`、`apps/desktop/src/app/App.tsx` | 单次 Local Key 创建经 Rust Tauri bridge 交付给当前 WebView 内存；管理令牌、Control URL、CredentialStore 引用和上游凭据不进入 WebView；Data Plane 认证闭环 | Core 启动级 SQLite/HTTP 集成、Rust bridge 单元、React UI 单元测试（L1） |
 | FR-OBS-004/006、NFR-SEC-003/005、AC-004 | `apps/core/internal/observability/{logger,diagnostics_recorder}.go`、`apps/core/internal/observability/diagnostics/`、`apps/core/internal/controlplane/diagnostics_handler.go`、`apps/desktop/src/pages/DiagnosticsPage.tsx`、`tests/e2e/diagnostics-secret-scan.ps1` | 失败请求的受限安全摘要、固定诊断 ZIP allowlist、管理令牌鉴权、固定目录打开和无绝对路径响应 | Go 单元/Control Plane 测试、React 诊断页测试、Rust 固定目录测试、ZIP 安全与 Sentinel 拒绝脚本、`pnpm check` 和 Race（L1） |
+| FR-PROV-006/007、FR-CONN-004、FR-MODEL-004~007、NFR-SEC-002/003 | `apps/core/internal/{management,provider,storage,controlplane}`、`apps/desktop/src-tauri/src/{core_process,runtime_commands}.rs`、`apps/desktop/src/app/App.tsx` | 显式 Provider 模型测试、固定错误码/状态转换、最近七天脱敏健康记录、管理令牌鉴权和按需 Desktop 弹窗；不保存正文、Header 或凭据 | Go 单元/真实临时 SQLite/Control Plane 负向测试、Rust bridge 构建测试、React 加载/空/成功测试（L1）；未运行真实 Provider、Claude Code、Codex 或 OAuth |
 ## 4. 非功能需求
 
 | 需求 | 控制 | 验证 |

@@ -206,6 +206,21 @@ pub struct ProviderTestResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProviderHealthRecord {
+    pub id: String,
+    pub check_type: String,
+    pub status: String,
+    pub latency_ms: Option<i64>,
+    pub error_code: Option<String>,
+    pub checked_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProviderHealthPage {
+    pub data: Vec<ProviderHealthRecord>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SyncModelsResult {
     pub discovered: i64,
 }
@@ -1295,6 +1310,13 @@ impl CoreProcessManager {
             .as_ref()
             .ok_or_else(|| "Core 管理连接不可用".to_owned())?;
         control_client::post_json(&ready.control_url, token.as_str(), &path, &())
+    }
+
+    pub fn list_provider_health(&self, id: String) -> Result<ProviderHealthPage, String> {
+        if !valid_model_id(&id) {
+            return Err("服务标识无效".to_owned());
+        }
+        self.get_control_json(&format!("/internal/v1/providers/{id}/health?limit=20"))
     }
 
     pub fn sync_provider_models(&self, id: String) -> Result<SyncModelsResult, String> {

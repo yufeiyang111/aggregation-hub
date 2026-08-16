@@ -221,6 +221,34 @@ paths:
                 $ref: '#/components/schemas/ProviderTestResult'
         '401':
           $ref: '#/components/responses/InvalidManagementToken'
+  /internal/v1/providers/{id}/health:
+    get:
+      operationId: listProviderHealth
+      summary: 读取服务近期健康检查记录
+      description: 仅返回最近七天内已分类、脱敏的显式测试结果，不含上游正文、Header 或凭据。
+      security:
+        - ManagementToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 最近健康检查记录，按检查时间倒序返回
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealthPage'
+        '400':
+          $ref: '#/components/responses/ControlPlaneError'
+        '401':
+          $ref: '#/components/responses/InvalidManagementToken'
+        '404':
+          $ref: '#/components/responses/ControlPlaneError'
+        '500':
+          $ref: '#/components/responses/ControlPlaneError'
   /internal/v1/providers/{id}/sync-models:
     post:
       operationId: syncProviderModels
@@ -625,6 +653,28 @@ components:
         message: { type: string, maxLength: 2000 }
         http_status: { type: integer, minimum: 0, maximum: 599 }
         retryable: { type: boolean }
+    ProviderHealthRecord:
+      type: object
+      additionalProperties: false
+      required: [id, check_type, status, latency_ms, error_code, checked_at]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 64 }
+        check_type: { type: string, enum: [connection, models, completion] }
+        status: { type: string, enum: [succeeded, failed, skipped] }
+        latency_ms: { type: [integer, "null"], minimum: 0 }
+        error_code:
+          type: [string, "null"]
+          enum: [ok, upstream_auth_failed, credential_unavailable, upstream_rate_limited, upstream_unavailable, upstream_invalid_response, unsupported_feature, cancelled, timeout, tls_error, dns_error, null]
+        checked_at: { type: string, format: date-time }
+    ProviderHealthPage:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProviderHealthRecord' }
     SyncModelsResult:
       type: object
       additionalProperties: false

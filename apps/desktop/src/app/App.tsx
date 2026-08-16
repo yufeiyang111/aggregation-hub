@@ -7,6 +7,7 @@ import { UsagePage } from "../pages/UsagePage";
 import { desktopApi, type CreateManualModelInput, type CreateProviderInput, type DashboardSnapshot, type ModelCapabilityOverride, type ModelLimitOverride, type ModelListQuery, type ModelPage as ModelPageData, type ModelSummary, type OneTimeLocalKey, type ProviderSummary, type RuntimeSnapshot, type RuntimeState, type UpdateProviderInput } from "../lib/desktop-api";
 import { EmptyState } from "../components/EmptyState";
 import { StatusDot } from "../components/StatusDot";
+import { ProviderHealthDialog } from "../components/ProviderHealthDialog";
 
 type LocalResponsesTestResult = import("../lib/desktop-api").LocalResponsesTestResult;
 
@@ -82,6 +83,7 @@ type PendingModelDelete = { model: ModelSummary };
 type PendingProviderChange = { provider: ProviderSummary; enabled: boolean };
 type PendingProviderDelete = { provider: ProviderSummary };
 type ProviderFeedback = { providerID: string; message: string; success: boolean } | null;
+type ProviderHealthPage = import("../lib/desktop-api").ProviderHealthPage;
 
 function safeMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() !== "" ? error.message : fallback;
@@ -91,19 +93,20 @@ function initialOf(value: string) {
   return value.trim().slice(0, 1).toUpperCase() || "服";
 }
 
-
-function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest, onSyncModels, onRequestChange, onRequestEdit, onRequestDelete }: {
+function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest, onHealth, onSyncModels, onRequestChange, onRequestEdit, onRequestDelete }: {
   provider: ProviderSummary;
   runtimeRunning: boolean;
   actionPending: boolean;
   feedback: ProviderFeedback;
   onTest: (provider: ProviderSummary) => void;
+  onHealth: (provider: ProviderSummary) => void;
   onSyncModels: (provider: ProviderSummary) => void;
   onRequestChange: (provider: ProviderSummary, enabled: boolean) => void;
   onRequestEdit: (provider: ProviderSummary) => void;
   onRequestDelete: (provider: ProviderSummary) => void;
 }) {
   const handleTest = useCallback(() => onTest(provider), [onTest, provider]);
+  const handleHealth = useCallback(() => onHealth(provider), [onHealth, provider]);
   const handleSyncModels = useCallback(() => onSyncModels(provider), [onSyncModels, provider]);
   const handleToggle = useCallback(() => onRequestChange(provider, !provider.enabled), [onRequestChange, provider]);
   const handleEdit = useCallback(() => onRequestEdit(provider), [onRequestEdit, provider]);
@@ -124,6 +127,7 @@ function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest
         <span className={provider.enabled ? "service-state is-enabled" : "service-state"}>{provider.enabled ? "已启用" : "未启用"}</span>
         <div className="service-button-group">
           <button type="button" className="button button-secondary" onClick={handleTest} disabled={disabled}>测试</button>
+          <button type="button" className="button button-secondary" onClick={handleHealth} disabled={!runtimeRunning}>记录</button>
           <button type="button" className="button button-secondary" onClick={handleSyncModels} disabled={disabled}>同步模型</button>
           <button type="button" className={provider.enabled ? "button button-secondary" : "button button-primary"} onClick={handleToggle} disabled={disabled}>{actionPending ? "正在更新" : provider.enabled ? "停用" : "启用"}</button>
           <button type="button" className="button button-secondary" onClick={handleEdit} disabled={disabled}>编辑</button>
@@ -134,13 +138,14 @@ function ProviderRow({ provider, runtimeRunning, actionPending, feedback, onTest
   );
 }
 
-function ServicePage({ dashboard, loading, actionPendingID, feedback, onCreate, onTest, onSyncModels, onRequestChange, onRequestEdit, onRequestDelete }: {
+function ServicePage({ dashboard, loading, actionPendingID, feedback, onCreate, onTest, onHealth, onSyncModels, onRequestChange, onRequestEdit, onRequestDelete }: {
   dashboard: DashboardSnapshot | null;
   loading: boolean;
   actionPendingID: string | null;
   feedback: ProviderFeedback;
   onCreate: () => void;
   onTest: (provider: ProviderSummary) => void;
+  onHealth: (provider: ProviderSummary) => void;
   onSyncModels: (provider: ProviderSummary) => void;
   onRequestChange: (provider: ProviderSummary, enabled: boolean) => void;
   onRequestEdit: (provider: ProviderSummary) => void;
@@ -166,7 +171,7 @@ function ServicePage({ dashboard, loading, actionPendingID, feedback, onCreate, 
       {!loading && providers.length === 0 ? <EmptyState title="还没有服务" description="新增一个 OpenAI 兼容服务后，即可测试连接并同步模型。" /> : null}
       {providers.length > 0 ? (
         <ul className="service-list" aria-label="已保存服务">
-          {providers.map((provider) => <ProviderRow key={provider.id} provider={provider} runtimeRunning={runtimeRunning} actionPending={actionPendingID === provider.id} feedback={feedback} onTest={onTest} onSyncModels={onSyncModels} onRequestChange={onRequestChange} onRequestEdit={onRequestEdit} onRequestDelete={onRequestDelete} />)}
+          {providers.map((provider) => <ProviderRow key={provider.id} provider={provider} runtimeRunning={runtimeRunning} actionPending={actionPendingID === provider.id} feedback={feedback} onTest={onTest} onHealth={onHealth} onSyncModels={onSyncModels} onRequestChange={onRequestChange} onRequestEdit={onRequestEdit} onRequestDelete={onRequestDelete} />)}
         </ul>
       ) : null}
     </section>
@@ -792,8 +797,13 @@ export function App() {
   const [pendingProviderChange, setPendingProviderChange] = useState<PendingProviderChange | null>(null);
   const [pendingProviderDelete, setPendingProviderDelete] = useState<PendingProviderDelete | null>(null);
   const [providerFeedback, setProviderFeedback] = useState<ProviderFeedback>(null);
+  const [healthProvider, setHealthProvider] = useState<ProviderSummary | null>(null);
+  const [providerHealth, setProviderHealth] = useState<ProviderHealthPage | null>(null);
+  const [providerHealthLoading, setProviderHealthLoading] = useState(false);
+  const [providerHealthError, setProviderHealthError] = useState<string | null>(null);
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const modelRequestRef = useRef(0);
+  const providerHealthRequestRef = useRef(0);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -972,13 +982,40 @@ export function App() {
     try {
       const result = await desktopApi.testProvider(provider.id);
       setProviderFeedback({ providerID: provider.id, message: result.success ? "连接测试通过" : result.message || "连接测试失败", success: result.success });
-      if (result.success) setError(null);
+      await refresh();
     } catch (reason) {
       setProviderFeedback({ providerID: provider.id, message: "连接测试失败", success: false });
       setError(safeMessage(reason, "测试服务失败"));
     } finally {
       setProviderActionPendingID(null);
     }
+  }, [refresh]);
+
+  const handleOpenProviderHealth = useCallback(async (provider: ProviderSummary) => {
+    const requestID = providerHealthRequestRef.current + 1;
+    providerHealthRequestRef.current = requestID;
+    setHealthProvider(provider);
+    setProviderHealth(null);
+    setProviderHealthError(null);
+    setProviderHealthLoading(true);
+    try {
+      const page = await desktopApi.listProviderHealth(provider.id);
+      if (providerHealthRequestRef.current !== requestID) return;
+      setProviderHealth(page);
+    } catch (reason) {
+      if (providerHealthRequestRef.current !== requestID) return;
+      setProviderHealthError(safeMessage(reason, "无法读取测试记录"));
+    } finally {
+      if (providerHealthRequestRef.current === requestID) setProviderHealthLoading(false);
+    }
+  }, []);
+
+  const handleCloseProviderHealth = useCallback(() => {
+    providerHealthRequestRef.current += 1;
+    setHealthProvider(null);
+    setProviderHealth(null);
+    setProviderHealthError(null);
+    setProviderHealthLoading(false);
   }, []);
 
   const handleSyncProviderModels = useCallback(async (provider: ProviderSummary) => {
@@ -1215,7 +1252,7 @@ export function App() {
     if (activePage === "overview") return <DashboardPage />;
     if (activePage === "requests") return <RequestListPage />;
     if (activePage === "usage") return <UsagePage />;
-    if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestEdit={setEditingProvider} onRequestDelete={handleRequestProviderDelete} />;
+    if (activePage === "services") return <ServicePage dashboard={dashboard} loading={loading} actionPendingID={providerActionPendingID} feedback={providerFeedback} onCreate={() => setProviderCreateOpen(true)} onTest={handleTestProvider} onHealth={handleOpenProviderHealth} onSyncModels={handleSyncProviderModels} onRequestChange={handleRequestProviderChange} onRequestEdit={setEditingProvider} onRequestDelete={handleRequestProviderDelete} />;
     if (activePage === "models") {
       return <ModelPage runtime={runtime} page={modelsPage} loading={modelLoading} actionPendingID={modelActionPendingID} search={modelSearch} enabledFilter={modelEnabledFilter} capabilityFilter={modelCapabilityFilter} onSearchChange={setModelSearch} onEnabledFilterChange={setModelEnabledFilter} onCapabilityFilterChange={setModelCapabilityFilter} onApplyFilters={handleApplyModelFilters} onNextPage={handleNextModelPage} onRefresh={handleRefreshModels} onRequestChange={handleRequestModelChange} onRequestEdit={setEditingModel} onRequestEditLimits={setEditingModelLimits} onRequestDelete={(model) => setPendingModelDelete({ model })} onCreateManual={() => setManualModelCreateOpen(true)} providers={dashboard?.providers ?? []} />;
     }
@@ -1282,6 +1319,7 @@ export function App() {
       {manualModelCreateOpen ? <ManualModelDialog providers={dashboard?.providers ?? []} pending={modelActionPendingID === "manual-create"} onClose={() => setManualModelCreateOpen(false)} onCreate={handleCreateManualModel} /> : null}
       <ModelDeleteDialog change={pendingModelDelete} pending={modelActionPendingID !== null} onConfirm={handleConfirmModelDelete} onCancel={handleCancelModelDelete} />
       <ModelChangeDialog change={pendingModelChange} pending={modelActionPendingID !== null} onConfirm={handleConfirmModelChange} onCancel={handleCancelModelChange} />
+      <ProviderHealthDialog provider={healthProvider} page={providerHealth} loading={providerHealthLoading} error={providerHealthError} onClose={handleCloseProviderHealth} />
     </main>
   );
 }

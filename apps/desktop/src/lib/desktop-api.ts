@@ -95,6 +95,20 @@ export interface SyncModelsResult {
   discovered: number;
 }
 
+export interface ProviderHealthRecord {
+  id: string;
+  check_type: "connection" | "models" | "completion";
+  status: "succeeded" | "failed" | "skipped";
+  latency_ms: number | null;
+  error_code: string | null;
+  checked_at: string;
+}
+
+export interface ProviderHealthPage {
+  data: ProviderHealthRecord[];
+}
+
+
 export interface ModelCapabilities {
   streaming: boolean;
   tools: boolean;
@@ -247,6 +261,7 @@ export const desktopApi = {
   enableProvider: (id: string, version: number) => invoke<ProviderSummary>("enable_provider", { id, version }),
   disableProvider: (id: string, version: number) => invoke<ProviderSummary>("disable_provider", { id, version }),
   testProvider: (id: string) => invoke<ProviderTestResult>("test_provider", { id }),
+  listProviderHealth: (id: string) => invoke<ProviderHealthPage>("list_provider_health", { id }),
   syncProviderModels: (id: string) => invoke<SyncModelsResult>("sync_provider_models", { id }),
   listModels: (query: ModelListQuery) => invoke<ModelPage>("list_models", { query }),
   listRequests: (query: RequestListQuery) => invoke<RequestPage>("list_requests", { query }),

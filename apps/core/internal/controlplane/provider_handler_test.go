@@ -224,3 +224,67 @@ func TestProviderListUsesBoundedPagination(t *testing.T) {
 		t.Fatalf("列表 Provider 响应错误 status=%d query=%+v body=%s", response.Code, reader.query, response.Body.String())
 	}
 }
+
+type fakeProviderHealthReader struct {
+	records []provider.HealthCheck
+	err     error
+	id      string
+	limit   int
+}
+
+func (value *fakeProviderHealthReader) Recent(_ context.Context, id string, limit int) ([]provider.HealthCheck, error) {
+	value.id, value.limit = id, limit
+	return value.records, value.err
+}
+
+func TestProviderHealthRouteUsesBoundedSafeRecords(t *testing.T) {
+	now := time.Date(2026, time.August, 16, 8, 0, 0, 0, time.UTC)
+	health := &fakeProviderHealthReader{records: []provider.HealthCheck{{ID: "check-1", ProviderID: "provider-1", CheckType: provider.HealthCheckModels, Status: provider.HealthCheckFailed, ErrorCode: "upstream_auth_failed", CheckedAt: now}}}
+	server, err := controlplane.NewServer(controlplane.Options{
+		ManagementToken: testManagementToken,
+		Runtime:         func() controlplane.RuntimeStatus { return controlplane.RuntimeStatus{} },
+		Shutdown:        func(context.Context) error { return nil },
+		ProviderService: &fakeProviderService{},
+		ProviderReader:  &fakeProviderReader{find: provider.Provider{ID: "provider-1"}},
+		ProviderHealth:  health,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, providerRequest(http.MethodGet, "/internal/v1/providers/provider-1/health?limit=10", "", true))
+	if response.Code != http.StatusOK || health.id != "provider-1" || health.limit != 10 || strings.Contains(response.Body.String(), "ProviderID") || !strings.Contains(response.Body.String(), `"error_code":"upstream_auth_failed"`) || !strings.Contains(response.Body.String(), `"checked_at":"2026-08-16T08:00:00Z"`) {
+		t.Fatalf("健康记录响应错误 status=%d reader=%+v body=%s", response.Code, health, response.Body.String())
+	}
+
+	invalid := httptest.NewRecorder()
+	server.Handler().ServeHTTP(invalid, providerRequest(http.MethodGet, "/internal/v1/providers/provider-1/health?unexpected=1", "", true))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("未知查询参数应拒绝 status=%d", invalid.Code)
+	}
+	duplicate := httptest.NewRecorder()
+	server.Handler().ServeHTTP(duplicate, providerRequest(http.MethodGet, "/internal/v1/providers/provider-1/health?limit=10&limit=20", "", true))
+	if duplicate.Code != http.StatusBadRequest {
+		t.Fatalf("重复查询参数应拒绝 status=%d", duplicate.Code)
+	}
+}
+
+func TestProviderHealthRouteDoesNotLeakReaderError(t *testing.T) {
+	health := &fakeProviderHealthReader{err: errors.New("database path should stay private")}
+	server, err := controlplane.NewServer(controlplane.Options{
+		ManagementToken: testManagementToken,
+		Runtime:         func() controlplane.RuntimeStatus { return controlplane.RuntimeStatus{} },
+		Shutdown:        func(context.Context) error { return nil },
+		ProviderService: &fakeProviderService{},
+		ProviderReader:  &fakeProviderReader{find: provider.Provider{ID: "provider-1"}},
+		ProviderHealth:  health,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, providerRequest(http.MethodGet, "/internal/v1/providers/provider-1/health", "", true))
+	if response.Code != http.StatusInternalServerError || strings.Contains(response.Body.String(), "database path") {
+		t.Fatalf("读取失败不应泄露细节 status=%d body=%s", response.Code, response.Body.String())
+	}
+}

@@ -13,6 +13,7 @@ func TestHealthStatusTransitionPreservesManualStateAndClassifiesFailures(t *test
 		{"认证失败", ProviderStatusEnabled, true, false, "upstream_auth_failed", ProviderStatusAuthRequired},
 		{"可重试失败", ProviderStatusEnabled, true, false, "upstream_unavailable", ProviderStatusDegraded},
 		{"未支持能力不降级", ProviderStatusEnabled, true, false, "unsupported_feature", ProviderStatusEnabled},
+		{"用户取消不降级", ProviderStatusEnabled, true, false, "cancelled", ProviderStatusEnabled},
 		{"成功恢复", ProviderStatusDegraded, true, true, "ok", ProviderStatusEnabled},
 		{"停用保持停用", ProviderStatusDisabled, false, false, "upstream_unavailable", ProviderStatusDisabled},
 	}

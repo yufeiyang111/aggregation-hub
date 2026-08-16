@@ -45,13 +45,13 @@ Chat Completions：messages、stream、tools、tool_choice、stop、Usage，以�
 
 ## 5. Control Plane
 
-测试 DTO Schema、WebView 无令牌无法直连、Provider 创建补偿事务、PATCH 版本冲突、掩码凭据不会回写、OAuth 会话一次性、Local Key 仅显示一次、敏感动作审计、分页排序 allowlist 和诊断导出 allowlist。
+测试 DTO Schema、WebView 无令牌无法直连、Provider 创建补偿事务、PATCH 版本冲突、掩码凭据不会回写、Provider 健康记录的错误码 allowlist/七天保留/受限查询参数、OAuth 会话一次性、Local Key 仅显示一次、敏感动作审计、分页排序 allowlist 和诊断导出 allowlist。
 
 ## 6. Desktop 与前端
 
 Rust/Tauri：Core 启停、异常重试、ready 解析、stdin 管理令牌、端口冲突、用户退出、Command 校验、禁止任意路径/Shell、托盘、开机启动和更新签名。
 
-React：首次向导、Provider 向导、模型同步、配置复制、Key 轮换、请求筛选、OAuth 状态、端口重启确认，以及每页加载/空/错误/成功。
+React：首次向导、Provider 向导、显式测试与按需健康记录、模型同步、配置复制、Key 轮换、请求筛选、OAuth 状态、端口重启确认，以及每页加载/空/错误/成功。
 
 可访问性：键盘、焦点、Label、屏幕阅读器名称、对比度、200% 缩放、减少动画和图表表格替代。
 

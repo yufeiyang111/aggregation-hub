@@ -196,40 +196,44 @@ pnpm web:test
 **Requirements:** `FR-PROV-006/007`、`FR-CONN-004`、`FR-MODEL-004~007`。
 
 **Files:**
-- Create: `apps/core/internal/provider/health_service.go`
-- Create: `apps/core/internal/provider/health_service_test.go`
-- Create: `apps/core/internal/storage/health_repository.go`
-- Create: `apps/core/internal/controlplane/provider_test_handler.go`
-- Modify: `contracts/control-plane.openapi.yaml`
-- Modify: `apps/desktop/src/pages/ProviderDetailPage.tsx`
-- Modify: `apps/desktop/src/pages/ModelDetailPage.tsx`
-- Create: related UI tests。
+- `apps/core/internal/provider/health_service.go`：受限错误码与健康状态转换。
+- `apps/core/internal/storage/health_repository.go`：最近七天的脱敏检查记录。
+- `apps/core/internal/management/provider_operations.go`：仅在用户显式点击测试后记录健康结果并更新可推导状态。
+- `apps/core/internal/controlplane/provider_health_handler.go`：受管理令牌保护的近期健康记录只读接口。
+- `apps/desktop/src-tauri/src/{core_process,runtime_commands}.rs`、`apps/desktop/src/lib/desktop-api.ts`：受类型约束的 Desktop bridge。
+- `apps/desktop/src/app/App.tsx`、`apps/desktop/src/components/ProviderHealthDialog.tsx`：按需读取的“记录”弹窗；不在页面加载时自动测试或读取。
+- `contracts/control-plane.openapi.yaml`：`GET /internal/v1/providers/{id}/health` 契约。
 
-**Interfaces:** 基于当前 Adapter 已实现的 `connection`、`models`、`chat` 测试种类产生安全结果与健康状态转换；尚未实现的流式/工具测试必须显式返回 `unsupported_feature`，不伪造成功。原生协议 Adapter 仍按用户决定留到全部 V1 功能完成后再评估。
+**实际接口边界：** V1 的控制面“测试”动作固定调用 Adapter 的 `models` 测试；当前 OpenAI-compatible Adapter 通过读取模型列表验证连接和鉴权，Anthropic-compatible Adapter 明确返回 `unsupported_feature`。`connection` 与 `chat` 仍是 Adapter 内部测试种类，尚未暴露为单独的控制面操作；流式与工具测试及原生协议 Adapter 继续按用户决定留到全部 V1 功能完成后再评估。
 
-- [ ] **Step 1: 写错误分类失败测试**
+- [x] **Step 1: 写安全错误分类与状态转换测试**
 
-Fake Upstream 覆盖 DNS、TLS、Timeout、Auth、Rate Limit、Protocol、Cancel 和能力不支持；当前仅验证 Adapter 已实现的 connection/models/chat 测试种类。
+覆盖认证失败、CredentialStore 不可用、未支持能力、用户取消、未知错误码降级为 allowlist 内的安全分类，以及停用 Provider 不被健康检查重新启用。记录中只保存固定错误码、检查类型、延迟和时间，不保存上游正文、Header 或凭据。
 
-- [ ] **Step 2: 实现显式可取消测试**
+- [x] **Step 2: 实现显式测试、保留与状态写入**
 
-每种 Test Kind 使用独立 Context；不在页面加载时自动触发；失败更新 Provider degraded/auth_required，但不删除模型。
+测试请求保留调用 Context 并由 Adapter/Transport 处理取消；页面不会自动发起测试。成功恢复为 `enabled`，认证/凭据问题转为 `auth_required`，其他可用性问题转为 `degraded`；`unsupported_feature` 与 `cancelled` 仅记录为 `skipped`，不改变 Provider 状态，也不删除模型。健康记录由 SQLite 仓储自动裁剪为最近七天。
 
-- [ ] **Step 3: 实现 UI 与能力覆盖确认**
+- [x] **Step 3: 实现健康记录 UI 与能力覆盖入口**
 
-每项检查独立显示结果和下一步；手工能力覆盖需要确认并可恢复；健康详情仅保留 7 天且不保存响应 Body。
+服务列表提供显式“测试”“记录”“同步模型”操作；“记录”仅在用户打开弹窗时通过 WebView → Tauri → Control Plane 获取最近 20 条记录，并处理加载、空、错误和成功状态。模型能力覆盖仍使用现有的显式编辑弹窗，可恢复为上游声明。
 
-- [ ] **Step 4: 验证**
+- [x] **Step 4: 验证**
 
 ```powershell
-pnpm contracts:check
-pnpm core:test
+pnpm --dir apps/desktop exec redocly lint ..\..\contracts\control-plane.openapi.yaml
 pnpm web:typecheck
+pnpm web:lint
 pnpm web:test
+pnpm core:vet
+pnpm core:test
+pnpm rust:test
+pnpm docs:check
 ```
 
-Expected: PASS，且错误分类与状态转换全部稳定。Suggested commit when authorized: `feat(provider): add health and capability testing`。
+Expected: PASS。当前最高证据等级为 L1：Fake/单元、真实临时 SQLite、Control Plane、Rust bridge 与 React UI 测试通过；未执行真实 Provider、Claude Code、Codex 或 OAuth。
 
+**实施记录（2026-08-16）：** 已完成本任务当前 V1 范围；`pnpm check`、契约 lint 和 `pnpm core:test:race` 均通过。网络 DNS/TLS 细分错误仍由 Transport/Adapter 后续细化；当前 Adapter 未产出时会收敛为 `upstream_unavailable`，不得将此实现描述为真实 Provider 兼容性证明。Suggested commit when authorized: `feat(provider): add health and capability testing`。
 ---
 
 ### Task 5.6: 设置、数据保留、备份恢复

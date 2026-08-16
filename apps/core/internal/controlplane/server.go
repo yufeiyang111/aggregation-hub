@@ -31,6 +31,7 @@ type Server struct {
 	providerReader     ProviderReader
 	localKeyService    LocalKeyService
 	providerOperations ProviderOperations
+	providerHealth     ProviderHealthReader
 	modelService       ModelService
 	modelReader        ModelReader
 	diagnostics        DiagnosticsService
@@ -48,6 +49,7 @@ type Options struct {
 	ProviderReader     ProviderReader
 	LocalKeyService    LocalKeyService
 	ProviderOperations ProviderOperations
+	ProviderHealth     ProviderHealthReader
 	ModelService       ModelService
 	ModelReader        ModelReader
 	Diagnostics        DiagnosticsService
@@ -59,7 +61,7 @@ func NewServer(options Options) (*Server, error) {
 	if len(options.ManagementToken) < 32 || options.Runtime == nil || options.Shutdown == nil {
 		return nil, errors.New("Control Plane 依赖无效")
 	}
-	return &Server{managementToken: []byte(options.ManagementToken), runtime: options.Runtime, shutdown: options.Shutdown, providerService: options.ProviderService, providerReader: options.ProviderReader, localKeyService: options.LocalKeyService, providerOperations: options.ProviderOperations, modelService: options.ModelService, modelReader: options.ModelReader, diagnostics: options.Diagnostics, requestReader: options.RequestReader, usageReader: options.UsageReader}, nil
+	return &Server{managementToken: []byte(options.ManagementToken), runtime: options.Runtime, shutdown: options.Shutdown, providerService: options.ProviderService, providerReader: options.ProviderReader, localKeyService: options.LocalKeyService, providerOperations: options.ProviderOperations, providerHealth: options.ProviderHealth, modelService: options.ModelService, modelReader: options.ModelReader, diagnostics: options.Diagnostics, requestReader: options.RequestReader, usageReader: options.UsageReader}, nil
 }
 
 func (server *Server) Handler() http.Handler {
@@ -70,6 +72,9 @@ func (server *Server) Handler() http.Handler {
 		server.registerProviderRoutes(mux)
 		if server.providerOperations != nil {
 			server.registerProviderOperationRoutes(mux)
+		}
+		if server.providerHealth != nil {
+			server.registerProviderHealthRoutes(mux)
 		}
 	}
 	if server.localKeyService != nil {

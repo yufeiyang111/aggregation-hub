@@ -13,7 +13,7 @@ func HealthStatusTransition(current ProviderStatus, enabled bool, success bool, 
 	switch strings.TrimSpace(code) {
 	case "upstream_auth_failed", "credential_unavailable", "auth_required":
 		return ProviderStatusAuthRequired
-	case "unsupported_feature":
+	case "unsupported_feature", "cancelled":
 		return current
 	default:
 		return ProviderStatusDegraded

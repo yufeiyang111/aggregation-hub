@@ -11,7 +11,7 @@ use core_process::CoreProcessManager;
 use runtime_commands::{
     create_local_key, create_manual_model, create_provider, dashboard_status, delete_manual_model,
     delete_provider, diagnostics_export, diagnostics_summary, disable_model, disable_provider,
-    enable_model, enable_provider, get_request, list_models, list_requests,
+    enable_model, enable_provider, get_request, list_models, list_provider_health, list_requests,
     open_diagnostics_directory, runtime_restart, runtime_start, runtime_status, runtime_stop,
     sync_provider_models, test_local_responses, test_provider, update_model_capabilities,
     update_model_limits, update_provider, usage_summary, usage_time_series,
@@ -41,6 +41,7 @@ fn run() {
             delete_provider,
             enable_provider,
             disable_provider,
+            list_provider_health,
             test_provider,
             test_local_responses,
             sync_provider_models,

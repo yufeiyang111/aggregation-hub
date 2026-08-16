@@ -90,6 +90,11 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		logger.Print("模型仓储初始化失败")
 		return 1
 	}
+	healthRepository, err := storage.NewHealthRepository(database)
+	if err != nil {
+		logger.Print("Provider 健康记录仓储初始化失败")
+		return 1
+	}
 	modelService, err := provider.NewModelService(modelRepository, provider.ModelServiceOptions{})
 	if err != nil {
 		logger.Print("模型服务初始化失败")
@@ -138,6 +143,10 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 	providerOperations, err := management.NewProviderOperations(providerRepository, modelRepository, credentialStore, registry, transport.NewFactory(security.NetworkPolicy{}, transport.Options{}))
 	if err != nil {
 		logger.Print("Provider 操作服务初始化失败")
+		return 1
+	}
+	if err := providerOperations.AttachHealthRecording(management.HealthRecordingOptions{Recorder: healthRepository, StatusWriter: providerRepository}); err != nil {
+		logger.Print("Provider 健康检查依赖初始化失败")
 		return 1
 	}
 	chatHandler, err := openaiingress.NewHandler(gate, requestRecorder)
@@ -196,6 +205,7 @@ func runWithRuntime(args []string, stdin io.Reader, stdout io.Writer, stderr io.
 		ProviderService:    providerService,
 		ProviderReader:     providerRepository,
 		ProviderOperations: providerOperations,
+		ProviderHealth:     healthRepository,
 		ModelService:       modelService,
 		ModelReader:        modelRepository,
 		LocalKeyService:    localKeyService,
