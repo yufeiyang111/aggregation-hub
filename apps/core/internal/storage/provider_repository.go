@@ -370,3 +370,15 @@ func classifyProviderWriteError(operation string, err error) error {
 	}
 	return fmt.Errorf("%s: %w", operation, err)
 }
+
+// SetHealthStatus 仅由受控健康检查更新运行状态，不改变用户的 enabled 意图。
+func (repository *ProviderRepository) SetHealthStatus(ctx context.Context, id string, status provider.ProviderStatus, updatedAt time.Time) error {
+	if ctx == nil || strings.TrimSpace(id) == "" || updatedAt.IsZero() || (status != provider.ProviderStatusEnabled && status != provider.ProviderStatusDegraded && status != provider.ProviderStatusAuthRequired) {
+		return provider.ErrInvalidProvider
+	}
+	_, err := repository.database.ExecContext(ctx, `UPDATE providers SET lifecycle_status=?,version=version+1,updated_at=? WHERE id=? AND enabled=1 AND deleted_at IS NULL`, status, updatedAt.UTC().UnixMilli(), id)
+	if err != nil {
+		return fmt.Errorf("更新 Provider 健康状态失败: %w", err)
+	}
+	return nil
+}
