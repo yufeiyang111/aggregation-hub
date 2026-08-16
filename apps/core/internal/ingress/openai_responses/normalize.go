@@ -11,13 +11,10 @@ import (
 )
 
 func normalizeInput(value requestDTO) (normalize.NormalizedRequest, error) {
-	if value.Stream {
-		return normalize.NormalizedRequest{}, errors.New("Responses 流式输出尚未启用")
-	}
 	if len(value.Reasoning) > 0 && !bytes.Equal(bytes.TrimSpace(value.Reasoning), []byte("null")) {
 		return normalize.NormalizedRequest{}, errors.New("Responses Reasoning 尚未启用")
 	}
-	result := normalize.NormalizedRequest{Model: strings.TrimSpace(value.Model), MaxOutputTokens: value.MaxOutputTokens}
+	result := normalize.NormalizedRequest{Model: strings.TrimSpace(value.Model), MaxOutputTokens: value.MaxOutputTokens, Stream: value.Stream}
 	if result.Model == "" || len(result.Model) > 304 {
 		return normalize.NormalizedRequest{}, errors.New("model 无效")
 	}

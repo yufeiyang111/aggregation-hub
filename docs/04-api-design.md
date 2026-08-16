@@ -93,7 +93,7 @@ Ingress 按入口协议转换错误外形。`details` 只允许白名单字段�
 
 ### POST /v1/responses
 
-Responses 已支持独立的非流式入口与 `wire_api=responses` 上游协议：包含文本、function_call、function_call_output、tools、tool_choice、usage 以及 completed/incomplete/failed 状态映射。stream、reasoning、hosted tool、file 和 image 当前明确返回 unsupported_feature；Responses 流式事件仍在后续阶段实现。
+Responses 已支持独立的非流式与流式入口及 `wire_api=responses` 上游协议：非流式包含文本、function_call、function_call_output、tools、tool_choice、usage 和 completed/incomplete/failed 状态映射；流式包含 response 创建、输出项、文本增量、Function 参数增量、usage 和终态事件。Reasoning、hosted tool、file 和 image 当前明确返回 unsupported_feature。
 
 实现时必须按当前 Codex 配置参考确认 Responses wire API，不能用 Chat Completions 假装完整 Codex 兼容。
 

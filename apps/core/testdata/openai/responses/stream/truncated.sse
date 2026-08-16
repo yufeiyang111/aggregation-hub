@@ -1,0 +1,2 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_stream_truncated","model":"gpt-stream","status":"in_progress"}}

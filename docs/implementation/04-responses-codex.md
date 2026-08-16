@@ -107,30 +107,30 @@ Expected: Chat Completions 与 Responses 契约均 PASS。实际已完成定向�
 
 **Interfaces:** Produces current Responses SSE event names from `NormalizedEvent`。
 
-- [ ] **Step 1: 刷新官方事件 Fixture**
+- [x] **Step 1: 刷新官方事件 Fixture**
 
-重新核对官方流式事件文档，在 `docs/references.md` 记录核对日期；将实际事件名称和最小 JSON 结构写入 testdata，而不是凭记忆实现。
+已核对 OpenAI 官方 Streaming Responses 文档并在 `docs/references.md` 记录 2026-08-16；夹具记录实际事件名称和最小 JSON 结构。
 
-- [ ] **Step 2: 写任意 TCP 分块测试**
+- [x] **Step 2: 写任意 TCP 分块测试**
 
-覆盖 response.created、output item added/done、text delta、Reasoning summary delta、Function arguments delta、completed、error 和 truncated stream。
+已覆盖 response.created、输出项新增/完成、text delta、Reasoning summary 的结构化拒绝、Function arguments delta、completed、incomplete、error、未知未来事件和 truncated stream。
 
-- [ ] **Step 3: 实现独立状态机**
+- [x] **Step 3: 实现独立状态机**
 
 上游 Parser 与入口 Serializer 分离；Function arguments 只在完成时校验 JSON；保持 `call_id` 映射；terminal event 只能出现一次。
 
-- [ ] **Step 4: 测试取消与背压**
+- [x] **Step 4: 测试取消与背压**
 
-客户端断开后取消上游 Context；慢客户端使用有界缓冲；首个 SSE 事件发送后不重试。
+客户端断开会取消上游 Context；Parser 同步等待 Emitter，避免无界缓冲；首个 SSE 事件发送后不重试，终态后不追加第二个错误事件。
 
-- [ ] **Step 5: 验证**
+- [x] **Step 5: 验证**
 
 ```powershell
 cd apps/core
-go test ./internal/adapter/openai ./internal/ingress/openai_responses -v -race
+go test ./internal/adapter/openai ./internal/ingress/openai_responses -v
 ```
 
-Expected: PASS。Suggested commit when authorized: `feat(stream): support Responses functions and reasoning`。
+Expected: PASS。定向测试与仓库全量门禁已通过；Windows race 链接问题保留为独立环境风险。
 
 ---
 

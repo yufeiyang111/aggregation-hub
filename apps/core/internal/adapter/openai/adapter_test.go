@@ -113,7 +113,7 @@ func TestAdapterBuildsAndParsesResponsesWireAPI(t *testing.T) {
 		ProviderID: "provider_1", BaseURL: "https://provider.example/api", UpstreamModelID: "gpt-upstream",
 		AdapterConfigJSON: json.RawMessage(`{"wire_api":"responses"}`),
 	}, normalize.NormalizedRequest{
-		Model: "provider_1/public", System: []normalize.TextPart{{Text: "遵守规则"}}, MaxOutputTokens: &maxOutput,
+		Model: "provider_1/public", Stream: true, System: []normalize.TextPart{{Text: "遵守规则"}}, MaxOutputTokens: &maxOutput,
 		Messages: []normalize.Message{
 			{Role: normalize.RoleUser, Parts: []normalize.ContentPart{normalize.TextPart{Text: "读取文件"}}},
 			{Role: normalize.RoleAssistant, Parts: []normalize.ContentPart{normalize.ToolCallPart{CallID: "call_1", Name: "read_file", Arguments: `{"path":"a.txt"}`}}},
@@ -135,7 +135,7 @@ func TestAdapterBuildsAndParsesResponsesWireAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	toolChoice, ok := requestBody["tool_choice"].(map[string]any)
-	if upstream.URL.String() != "https://provider.example/v1/responses" || upstream.Header.Get("Authorization") != "Bearer test-key" || !strings.Contains(body, `"function_call_output"`) || requestBody["instructions"] != "遵守规则" || !ok || toolChoice["type"] != "function" || toolChoice["name"] != "read_file" {
+	if upstream.URL.String() != "https://provider.example/v1/responses" || upstream.Header.Get("Authorization") != "Bearer test-key" || upstream.Header.Get("Accept") != "text/event-stream" || requestBody["stream"] != true || !strings.Contains(body, `"function_call_output"`) || requestBody["instructions"] != "遵守规则" || !ok || toolChoice["type"] != "function" || toolChoice["name"] != "read_file" {
 		t.Fatalf("Responses 上游请求错误: url=%s headers=%v body=%s", upstream.URL, upstream.Header, body)
 	}
 

@@ -14,6 +14,7 @@ type responsesRequest struct {
 	Tools           []responsesTool  `json:"tools,omitempty"`
 	ToolChoice      any              `json:"tool_choice,omitempty"`
 	MaxOutputTokens *int64           `json:"max_output_tokens,omitempty"`
+	Stream          bool             `json:"stream,omitempty"`
 }
 
 type responsesInput struct {
@@ -34,7 +35,7 @@ type responsesTool struct {
 }
 
 func buildResponsesBody(upstreamModel string, request normalize.NormalizedRequest) (responsesRequest, error) {
-	body := responsesRequest{Model: upstreamModel, MaxOutputTokens: request.MaxOutputTokens}
+	body := responsesRequest{Model: upstreamModel, MaxOutputTokens: request.MaxOutputTokens, Stream: request.Stream}
 	for _, part := range request.System {
 		if body.Instructions != "" {
 			body.Instructions += "\n"

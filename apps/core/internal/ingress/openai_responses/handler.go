@@ -49,7 +49,7 @@ func (value *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	if normalized.Stream {
-		writeError(writer, http.StatusBadRequest, "unsupported_feature", "Responses 流式输出尚未启用")
+		value.serveStream(writer, request, normalized)
 		return
 	}
 	result, err := value.gateway.Complete(request.Context(), normalized)

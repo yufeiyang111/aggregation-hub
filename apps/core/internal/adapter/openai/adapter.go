@@ -114,7 +114,14 @@ func (value *Adapter) BuildRequest(ctx context.Context, route routing.RoutePlan,
 		if err != nil {
 			return nil, adapterError("unsupported_feature", "请求包含当前上游不支持的能力", http.StatusBadRequest, false, route.ProviderID, err)
 		}
-		return buildJSONRequest(ctx, target, body, credential, config.AuthHeaderMode, route.ProviderID)
+		upstream, err := buildJSONRequest(ctx, target, body, credential, config.AuthHeaderMode, route.ProviderID)
+		if err != nil {
+			return nil, err
+		}
+		if request.Stream {
+			upstream.Header.Set("Accept", "text/event-stream")
+		}
+		return upstream, nil
 	}
 	target, err := resolveRouteURL(route.BaseURL, config.ChatCompletionsPath)
 	if err != nil {

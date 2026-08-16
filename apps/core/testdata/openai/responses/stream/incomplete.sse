@@ -1,0 +1,5 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_stream_incomplete","model":"gpt-stream","status":"in_progress"}}
+
+event: response.incomplete
+data: {"type":"response.incomplete","response":{"id":"resp_stream_incomplete","model":"gpt-stream","status":"incomplete","usage":{"input_tokens":2,"output_tokens":1}}}

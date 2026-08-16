@@ -45,10 +45,20 @@ func TestNormalizeResponsesStringInput(t *testing.T) {
 	}
 }
 
+func TestNormalizeResponsesAllowsStreaming(t *testing.T) {
+	value, err := decodeRequest(httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"bundle/model","stream":true,"input":"你好"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized, err := normalizeInput(value)
+	if err != nil || !normalized.Stream {
+		t.Fatalf("Responses stream 规范化失败: normalized=%#v err=%v", normalized, err)
+	}
+}
+
 func TestNormalizeResponsesRejectsUnsupportedItems(t *testing.T) {
 	cases := []string{
 		`{"model":"bundle/model","input":[{"type":"computer_call","id":"x"}]}`,
-		`{"model":"bundle/model","stream":true,"input":"你好"}`,
 		`{"model":"bundle/model","reasoning":{"effort":"high"},"input":"你好"}`,
 		`{"model":"bundle/model","input":[{"type":"function_call_output","call_id":"missing","output":"x"}]}`,
 	}

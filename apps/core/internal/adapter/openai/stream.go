@@ -49,6 +49,13 @@ func (value *Adapter) ParseStream(ctx context.Context, route routing.RoutePlan, 
 	if ctx == nil || response == nil || emitter == nil {
 		return adapterError("invalid_request", "流式请求无效", http.StatusBadRequest, false, route.ProviderID, nil)
 	}
+	config, err := ParseConfig(route.AdapterConfigJSON)
+	if err != nil {
+		return adapterError("invalid_provider_config", "服务配置无效", http.StatusBadRequest, false, route.ProviderID, err)
+	}
+	if config.WireAPI == WireAPIResponses {
+		return value.parseResponsesStream(ctx, route, response, emitter)
+	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return gatewayFromResponse(route.ProviderID, response)
 	}

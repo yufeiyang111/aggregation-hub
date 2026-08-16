@@ -25,7 +25,7 @@
 - Codex Config Reference：https://developers.openai.com/codex/config-reference
 - Responses API：https://developers.openai.com/api/reference/responses
 - Function Calling：https://developers.openai.com/api/docs/guides/function-calling
-- Streaming Responses：https://developers.openai.com/api/docs/guides/streaming-responses
+- **2026-08-16 已核对（OpenAI 官方）**：Streaming Responses：https://developers.openai.com/api/docs/guides/streaming-responses
 
 实施时核对 model_providers 的 base_url、认证、wire_api，Codex Responses 要求、Function Call/Output、Reasoning、ChatGPT 登录与 API Key 边界，以及官方 OAuth/凭据帮助机制。
 
