@@ -117,7 +117,7 @@
 | NFR-PERF-003 | 有界日志队列 | 拥塞和丢弃计数待 Phase 5 |
 | NFR-PERF-004 | Tauri + Go 预算 | 发布构建实测待 Phase 7 |
 | NFR-MAIN-001~002 | Adapter/分层 | 包依赖与共享 Adapter 测试待 Phase 2~4 |
-| NFR-MAIN-003 | 嵌入式前向迁移与校验和 | `migrate_test.go` 的幂等、漂移和事务回滚测试 |
+| NFR-MAIN-003 | 嵌入式前向迁移与校验和；仅对已验证的预发布初始库执行结构指纹校验后的兼容迁移 | `migrate_test.go` 的幂等、漂移和事务回滚测试 |
 | NFR-MAIN-004 | 本矩阵与统一门禁 | `pnpm docs:check`、`scripts/test-all.ps1`、CI Gate |
 | NFR-UX-001~004 | 页面状态/可访问性/确认/错误 | 组件与人工检查待 Phase 5 |
 ## 5. 验收追踪

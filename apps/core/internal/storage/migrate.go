@@ -20,6 +20,8 @@ var (
 	ErrInvalidMigration          = errors.New("迁移文件无效")
 )
 
+const legacyInitialMigrationChecksum = "9409c95a142c6a8b64e4babc6d13adadf58418426530652fc4c047505a3bfdf5"
+
 var migrationFileName = regexp.MustCompile(`^(\d{4,})_([a-z0-9][a-z0-9_-]*)\.sql$`)
 
 type migration struct {
@@ -67,11 +69,122 @@ func Migrate(ctx context.Context, database *sql.DB, migrationFS fs.FS) error {
 		case err != nil:
 			return fmt.Errorf("读取迁移元数据失败: %w", err)
 		case storedChecksum != current.checksum:
-			return fmt.Errorf("%w: version=%d", ErrMigrationChecksumMismatch, current.version)
+			compatible, err := isVerifiedLegacyInitialMigration(ctx, database, current, storedChecksum)
+			if err != nil {
+				return err
+			}
+			if !compatible {
+				return fmt.Errorf("%w: version=%d", ErrMigrationChecksumMismatch, current.version)
+			}
 		}
 	}
 
 	return nil
+}
+
+// isVerifiedLegacyInitialMigration 仅兼容已知预发布初始库，绝不接受任意校验和漂移。
+func isVerifiedLegacyInitialMigration(ctx context.Context, database *sql.DB, current migration, storedChecksum string) (bool, error) {
+	if current.version != 1 || current.name != "0001_initial.sql" || storedChecksum != legacyInitialMigrationChecksum {
+		return false, nil
+	}
+
+	var integrity string
+	if err := database.QueryRowContext(ctx, "PRAGMA integrity_check").Scan(&integrity); err != nil {
+		return false, fmt.Errorf("校验旧初始库完整性失败: %w", err)
+	}
+	if integrity != "ok" {
+		return false, nil
+	}
+
+	var migrationCount int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
+		return false, fmt.Errorf("读取旧初始库迁移记录失败: %w", err)
+	}
+	if migrationCount != 1 {
+		return false, nil
+	}
+
+	providerModelColumns, err := readVerifiedLegacyColumns(ctx, database, "provider_models")
+	if err != nil {
+		return false, err
+	}
+	usageColumns, err := readVerifiedLegacyColumns(ctx, database, "usage_daily")
+	if err != nil {
+		return false, err
+	}
+
+	if !hasColumns(providerModelColumns, []string{
+		"id", "provider_id", "upstream_model_id", "public_model_id", "context_window_tokens", "max_output_tokens", "capability_override_json",
+	}) || hasAnyColumn(providerModelColumns, []string{"context_window_override_tokens", "max_output_override_tokens"}) {
+		return false, nil
+	}
+	if !hasColumns(usageColumns, []string{
+		"date_utc", "provider_slug_snapshot", "public_model_snapshot", "input_tokens", "output_tokens", "cached_input_tokens", "reasoning_tokens",
+	}) || hasAnyColumn(usageColumns, []string{
+		"input_token_reported_count", "output_token_reported_count", "cached_input_token_reported_count", "reasoning_token_reported_count", "cache_eligible_input_tokens", "cache_eligible_cached_input_tokens",
+	}) {
+		return false, nil
+	}
+
+	var runtimeSettingsTableCount int
+	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'runtime_settings_revision'").Scan(&runtimeSettingsTableCount); err != nil {
+		return false, fmt.Errorf("读取旧初始库表结构失败: %w", err)
+	}
+	return runtimeSettingsTableCount == 0, nil
+}
+
+func readVerifiedLegacyColumns(ctx context.Context, database *sql.DB, table string) (map[string]struct{}, error) {
+	query := ""
+	switch table {
+	case "provider_models":
+		query = "PRAGMA table_info(provider_models)"
+	case "usage_daily":
+		query = "PRAGMA table_info(usage_daily)"
+	default:
+		return nil, errors.New("旧初始库表标识无效")
+	}
+
+	rows, err := database.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("读取旧初始库列失败: %w", err)
+	}
+	defer rows.Close()
+
+	columns := make(map[string]struct{})
+	for rows.Next() {
+		var columnIndex int
+		var columnName string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&columnIndex, &columnName, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return nil, fmt.Errorf("读取旧初始库列值失败: %w", err)
+		}
+		columns[columnName] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历旧初始库列失败: %w", err)
+	}
+	return columns, nil
+}
+
+func hasColumns(columns map[string]struct{}, required []string) bool {
+	for _, name := range required {
+		if _, exists := columns[name]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+func hasAnyColumn(columns map[string]struct{}, names []string) bool {
+	for _, name := range names {
+		if _, exists := columns[name]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 func readMigrations(migrationFS fs.FS) ([]migration, error) {

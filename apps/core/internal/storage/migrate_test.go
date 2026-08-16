@@ -157,3 +157,77 @@ func TestOpenRejectsEmptyPath(t *testing.T) {
 		t.Fatalf("空数据库路径错误=%v，期望 ErrInvalidDatabasePath", err)
 	}
 }
+
+func TestMigrateAcceptsVerifiedLegacyInitialChecksum(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "aggregation-hub.db")
+	database, err := storage.Open(databasePath)
+	if err != nil {
+		t.Fatalf("打开临时 SQLite 数据库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("关闭临时 SQLite 数据库失败: %v", err)
+		}
+	})
+
+	initialOnly := fstest.MapFS{
+		"0001_initial.sql": &fstest.MapFile{Data: mustReadMigration(t, "0001_initial.sql")},
+	}
+	if err := storage.Migrate(context.Background(), database, initialOnly); err != nil {
+		t.Fatalf("执行旧初始迁移失败: %v", err)
+	}
+	if _, err := database.Exec(`UPDATE schema_migrations SET checksum = ? WHERE version = 1`, "9409c95a142c6a8b64e4babc6d13adadf58418426530652fc4c047505a3bfdf5"); err != nil {
+		t.Fatalf("写入旧校验和夹具失败: %v", err)
+	}
+
+	if err := storage.Migrate(context.Background(), database, migrations.FS); err != nil {
+		t.Fatalf("已验证的旧初始库应可继续前向迁移: %v", err)
+	}
+
+	var migrationCount int
+	if err := database.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
+		t.Fatalf("读取迁移记录失败: %v", err)
+	}
+	if migrationCount != 5 {
+		t.Fatalf("迁移记录数=%d，期望 5", migrationCount)
+	}
+
+	var storedChecksum string
+	if err := database.QueryRow("SELECT checksum FROM schema_migrations WHERE version = 1").Scan(&storedChecksum); err != nil {
+		t.Fatalf("读取旧迁移校验和失败: %v", err)
+	}
+	if storedChecksum != "9409c95a142c6a8b64e4babc6d13adadf58418426530652fc4c047505a3bfdf5" {
+		t.Fatalf("旧迁移校验和不应被静默改写，实际值=%s", storedChecksum)
+	}
+}
+
+func TestMigrateRejectsVerifiedLegacyChecksumWhenSchemaIsNotLegacyBaseline(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "aggregation-hub.db")
+	database, err := storage.Open(databasePath)
+	if err != nil {
+		t.Fatalf("打开临时 SQLite 数据库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := database.Close(); err != nil {
+			t.Errorf("关闭临时 SQLite 数据库失败: %v", err)
+		}
+	})
+
+	initialOnly := fstest.MapFS{
+		"0001_initial.sql": &fstest.MapFile{Data: mustReadMigration(t, "0001_initial.sql")},
+	}
+	if err := storage.Migrate(context.Background(), database, initialOnly); err != nil {
+		t.Fatalf("执行旧初始迁移失败: %v", err)
+	}
+	if _, err := database.Exec(`ALTER TABLE provider_models ADD COLUMN context_window_override_tokens INTEGER`); err != nil {
+		t.Fatalf("构造非旧基线数据库失败: %v", err)
+	}
+	if _, err := database.Exec(`UPDATE schema_migrations SET checksum = ? WHERE version = 1`, "9409c95a142c6a8b64e4babc6d13adadf58418426530652fc4c047505a3bfdf5"); err != nil {
+		t.Fatalf("写入旧校验和夹具失败: %v", err)
+	}
+
+	err = storage.Migrate(context.Background(), database, migrations.FS)
+	if !errors.Is(err, storage.ErrMigrationChecksumMismatch) {
+		t.Fatalf("非旧基线的校验和不匹配错误=%v，期望 ErrMigrationChecksumMismatch", err)
+	}
+}
