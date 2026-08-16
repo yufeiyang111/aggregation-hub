@@ -33,15 +33,15 @@
 
 **Interfaces:** Produces `POST /v1/responses`；consumes Normalized Contract and Router。
 
-- [ ] **Step 1: 写失败 DTO 测试**
+- [x] **Step 1: 写失败 DTO 测试**
 
 覆盖 string/input item、instructions、function tool、function_call_output、Reasoning、stream、`max_output_tokens`、未知项和 V1 不支持项。
 
-- [ ] **Step 2: 实现严格输入模型**
+- [x] **Step 2: 实现严格输入模型**
 
-使用显式 item union 和大小/深度限制；不支持 hosted tool、file 或 image 输入时返回 `unsupported_feature`，不得静默丢弃。
+使用显式 item union 和请求大小限制；当前支持文本、function_call、function_call_output。hosted tool、file、image、Reasoning 和 stream 暂返回结构化不支持错误，不静默丢弃。
 
-- [ ] **Step 3: 实现 NormalizedRequest 转换**
+- [x] **Step 3: 实现 NormalizedRequest 转换**
 
 Instructions 映射到 System；Function Call/Result 通过 `call_id` 关联；从 Reasoning 和 Tool 字段推导 Required Capabilities。
 
@@ -53,7 +53,7 @@ go test ./internal/ingress/openai_responses -v -race
 go test ./internal/ingress/... ./internal/routing/... -race
 ```
 
-Expected: PASS。Suggested commit when authorized: `feat(api): normalize OpenAI Responses requests`。
+定向验证已通过：`go test ./internal/ingress/openai_responses -v`。本阶段只完成入口和规范化；Responses 上游 Adapter、非流式响应序列化和流式事件仍待后续任务。Suggested commit: `feat(api): normalize OpenAI Responses requests`。
 
 ---
 
