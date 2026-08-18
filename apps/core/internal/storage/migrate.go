@@ -69,7 +69,7 @@ func Migrate(ctx context.Context, database *sql.DB, migrationFS fs.FS) error {
 		case err != nil:
 			return fmt.Errorf("读取迁移元数据失败: %w", err)
 		case storedChecksum != current.checksum:
-			compatible, err := isVerifiedLegacyInitialMigration(ctx, database, current, storedChecksum)
+			compatible, err := isVerifiedLegacyInitialMigration(ctx, database, current, storedChecksum, migrations)
 			if err != nil {
 				return err
 			}
@@ -83,7 +83,7 @@ func Migrate(ctx context.Context, database *sql.DB, migrationFS fs.FS) error {
 }
 
 // isVerifiedLegacyInitialMigration 仅兼容已知预发布初始库，绝不接受任意校验和漂移。
-func isVerifiedLegacyInitialMigration(ctx context.Context, database *sql.DB, current migration, storedChecksum string) (bool, error) {
+func isVerifiedLegacyInitialMigration(ctx context.Context, database *sql.DB, current migration, storedChecksum string, migrations []migration) (bool, error) {
 	if current.version != 1 || current.name != "0001_initial.sql" || storedChecksum != legacyInitialMigrationChecksum {
 		return false, nil
 	}
@@ -96,12 +96,24 @@ func isVerifiedLegacyInitialMigration(ctx context.Context, database *sql.DB, cur
 		return false, nil
 	}
 
-	var migrationCount int
-	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
-		return false, fmt.Errorf("读取旧初始库迁移记录失败: %w", err)
+	appliedMigrations, err := readAppliedMigrations(ctx, database)
+	if err != nil {
+		return false, err
 	}
-	if migrationCount != 1 {
-		return false, nil
+	for version, applied := range appliedMigrations {
+		if version == current.version {
+			continue
+		}
+		var expected *migration
+		for index := range migrations {
+			if migrations[index].version == version {
+				expected = &migrations[index]
+				break
+			}
+		}
+		if expected == nil || applied.name != expected.name || applied.checksum != expected.checksum {
+			return false, nil
+		}
 	}
 
 	providerModelColumns, err := readVerifiedLegacyColumns(ctx, database, "provider_models")
@@ -115,22 +127,58 @@ func isVerifiedLegacyInitialMigration(ctx context.Context, database *sql.DB, cur
 
 	if !hasColumns(providerModelColumns, []string{
 		"id", "provider_id", "upstream_model_id", "public_model_id", "context_window_tokens", "max_output_tokens", "capability_override_json",
-	}) || hasAnyColumn(providerModelColumns, []string{"context_window_override_tokens", "max_output_override_tokens"}) {
+	}) {
 		return false, nil
 	}
 	if !hasColumns(usageColumns, []string{
 		"date_utc", "provider_slug_snapshot", "public_model_snapshot", "input_tokens", "output_tokens", "cached_input_tokens", "reasoning_tokens",
-	}) || hasAnyColumn(usageColumns, []string{
-		"input_token_reported_count", "output_token_reported_count", "cached_input_token_reported_count", "reasoning_token_reported_count", "cache_eligible_input_tokens", "cache_eligible_cached_input_tokens",
 	}) {
 		return false, nil
 	}
 
-	var runtimeSettingsTableCount int
-	if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'runtime_settings_revision'").Scan(&runtimeSettingsTableCount); err != nil {
-		return false, fmt.Errorf("读取旧初始库表结构失败: %w", err)
+	// 只有旧初始迁移时才要求不存在后续迁移产生的结构；后续迁移已经存在时，
+	// 允许它们按当前版本继续通过下面的普通迁移校验。
+	if len(appliedMigrations) == 1 {
+		if hasAnyColumn(providerModelColumns, []string{"context_window_override_tokens", "max_output_override_tokens"}) || hasAnyColumn(usageColumns, []string{
+			"input_token_reported_count", "output_token_reported_count", "cached_input_token_reported_count", "reasoning_token_reported_count", "cache_eligible_input_tokens", "cache_eligible_cached_input_tokens",
+		}) {
+			return false, nil
+		}
+
+		var runtimeSettingsTableCount int
+		if err := database.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'runtime_settings_revision'").Scan(&runtimeSettingsTableCount); err != nil {
+			return false, fmt.Errorf("读取旧初始库表结构失败: %w", err)
+		}
+		return runtimeSettingsTableCount == 0, nil
 	}
-	return runtimeSettingsTableCount == 0, nil
+	return true, nil
+}
+
+type appliedMigration struct {
+	name     string
+	checksum string
+}
+
+func readAppliedMigrations(ctx context.Context, database *sql.DB) (map[int64]appliedMigration, error) {
+	rows, err := database.QueryContext(ctx, "SELECT version, name, checksum FROM schema_migrations")
+	if err != nil {
+		return nil, fmt.Errorf("读取旧初始库迁移记录失败: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]appliedMigration)
+	for rows.Next() {
+		var version int64
+		var applied appliedMigration
+		if err := rows.Scan(&version, &applied.name, &applied.checksum); err != nil {
+			return nil, fmt.Errorf("读取旧初始库迁移记录值失败: %w", err)
+		}
+		result[version] = applied
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历旧初始库迁移记录失败: %w", err)
+	}
+	return result, nil
 }
 
 func readVerifiedLegacyColumns(ctx context.Context, database *sql.DB, table string) (map[string]struct{}, error) {

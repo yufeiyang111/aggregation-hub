@@ -201,6 +201,17 @@ func TestMigrateAcceptsVerifiedLegacyInitialChecksum(t *testing.T) {
 	}
 }
 
+func TestMigrateAcceptsVerifiedLegacyChecksumAfterLaterMigrations(t *testing.T) {
+	database := openMigratedDatabase(t)
+	if _, err := database.Exec(`UPDATE schema_migrations SET checksum = ? WHERE version = 1`, "9409c95a142c6a8b64e4babc6d13adadf58418426530652fc4c047505a3bfdf5"); err != nil {
+		t.Fatalf("写入旧校验和夹具失败: %v", err)
+	}
+
+	if err := storage.Migrate(context.Background(), database, migrations.FS); err != nil {
+		t.Fatalf("已完成后续迁移的旧初始库应可继续启动: %v", err)
+	}
+}
+
 func TestMigrateRejectsVerifiedLegacyChecksumWhenSchemaIsNotLegacyBaseline(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "aggregation-hub.db")
 	database, err := storage.Open(databasePath)
